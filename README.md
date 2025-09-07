@@ -11,7 +11,7 @@
 
 ### Option 2: Install specific version
 To install a specific version, append the version tag:
-- `https://github.com/Geenz/GeenzShade.git#upm/v0.0.5`
+- `https://github.com/Geenz/GeenzShade.git#upm/v0.0.6`
 
 ### Option 3: Add to manifest.json
 Add this line to your `Packages/manifest.json` dependencies:
