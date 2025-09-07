@@ -98,7 +98,14 @@ jobs:
               "url": "https://www.patreon.com/c/voidanchor"
             },
             "type": "library",
-            "hideInEditor": false
+            "hideInEditor": false,
+            "samples": [
+              {
+                "displayName": "Material Examples",
+                "description": "Example materials showcasing various GeenzShade features including clearcoat, iridescence, and more.",
+                "path": "Samples~/Material Examples"
+              }
+            ]
           }
           EOF
       
