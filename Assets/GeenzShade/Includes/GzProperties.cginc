@@ -79,14 +79,6 @@ half4 _DiffuseTransmissionColorFactor;
 sampler2D _DiffuseTransmissionTexture;
 float4 _DiffuseTransmissionTexture_ST;
 
-// Depth Fade
-half _UseDepthFade;
-half _DepthFade;
-half _DepthFadePower;
-half _DepthFadeOffset;
-half _DebugDepthFade;
-half _DebugDepthMode;
-
 // Environment
 half _ReflectionProbeThreshold;
 half _SHThreshold;
