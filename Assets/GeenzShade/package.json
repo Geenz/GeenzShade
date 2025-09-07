@@ -1,0 +1,28 @@
+{
+  "name": "com.geenz.geenzshade",
+  "version": "1.0.0",
+  "displayName": "GeenzShade",
+  "description": "A collection of shaders by Geenz. Includes advanced PBR shaders with glTF 2.0 support.",
+  "unity": "2022.3",
+  "documentationUrl": "https://github.com/Geenz/GeenzShade",
+  "changelogUrl": "https://github.com/Geenz/GeenzShade/releases",
+  "licensesUrl": "https://github.com/Geenz/GeenzShade/blob/main/LICENSE",
+  "dependencies": {},
+  "keywords": [
+    "shader",
+    "pbr",
+    "gltf",
+    "vrchat",
+    "rendering",
+    "materials",
+    "iridescence",
+    "clearcoat",
+    "sheen"
+  ],
+  "author": {
+    "name": "Geenz",
+    "url": "https://www.patreon.com/c/voidanchor"
+  },
+  "type": "library",
+  "hideInEditor": false
+}

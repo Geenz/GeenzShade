@@ -1,0 +1,220 @@
+name: UPM Package Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  create-upm-package:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Creating UPM package for version: $VERSION"
+      
+      - name: Setup package structure
+        run: |
+          # Create UPM branch if it doesn't exist
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # Check if upm branch exists
+          if git ls-remote --heads origin upm | grep -q upm; then
+            git fetch origin upm
+            git checkout upm
+            git merge --strategy=ours main -m "Prepare for version ${{ steps.version.outputs.VERSION }}"
+          else
+            git checkout -b upm
+          fi
+          
+          # Clean the branch
+          git rm -rf . || true
+          git clean -fdx
+          
+          # Checkout files from main
+          git checkout main -- Assets/
+          git checkout main -- README.md
+          git checkout main -- LICENSE || true
+          
+          # Move Assets/GeenzShade content to root for UPM
+          if [ -d "Assets/GeenzShade" ]; then
+            mv Assets/GeenzShade/* . 2>/dev/null || true
+            rm -rf Assets
+          fi
+          
+          # Clean up meta files that shouldn't be in package root
+          find . -name "*.meta" -path "./.*" -delete 2>/dev/null || true
+      
+      - name: Create package.json
+        run: |
+          cat > package.json << EOF
+          {
+            "name": "com.geenz.geenzshade",
+            "version": "${{ steps.version.outputs.VERSION }}",
+            "displayName": "GeenzShade",
+            "description": "A collection of shaders by Geenz. Includes advanced PBR shaders with glTF 2.0 support.",
+            "unity": "2022.3",
+            "documentationUrl": "https://github.com/${{ github.repository }}",
+            "changelogUrl": "https://github.com/${{ github.repository }}/releases",
+            "licensesUrl": "https://github.com/${{ github.repository }}/blob/main/LICENSE",
+            "dependencies": {},
+            "keywords": [
+              "shader",
+              "pbr",
+              "gltf",
+              "vrchat",
+              "rendering",
+              "materials",
+              "iridescence",
+              "clearcoat",
+              "sheen"
+            ],
+            "author": {
+              "name": "Geenz",
+              "url": "https://www.patreon.com/c/voidanchor"
+            },
+            "type": "library",
+            "hideInEditor": false
+          }
+          EOF
+      
+      - name: Create package.json.meta
+        run: |
+          cat > package.json.meta << EOF
+          fileFormatVersion: 2
+          guid: a7f3c8e5b2d14a4489b5c2a3d1e6f9c8
+          TextScriptImporter:
+            externalObjects: {}
+            userData: 
+            assetBundleName: 
+            assetBundleVariant: 
+          EOF
+      
+      - name: Create assembly definitions
+        run: |
+          # Create Editor assembly definition
+          if [ -d "Editor" ]; then
+            cat > Editor/GeenzShade.Editor.asmdef << EOF
+          {
+            "name": "GeenzShade.Editor",
+            "rootNamespace": "GeenzShade",
+            "references": [],
+            "includePlatforms": [
+              "Editor"
+            ],
+            "excludePlatforms": [],
+            "allowUnsafeCode": false,
+            "overrideReferences": false,
+            "precompiledReferences": [],
+            "autoReferenced": true,
+            "defineConstraints": [],
+            "versionDefines": [],
+            "noEngineReferences": false
+          }
+          EOF
+            
+            # Create meta file for asmdef
+            cat > Editor/GeenzShade.Editor.asmdef.meta << EOF
+          fileFormatVersion: 2
+          guid: b8a4d9f6c3e24b5498d7f3a2c1b8e7d9
+          AssemblyDefinitionImporter:
+            externalObjects: {}
+            userData: 
+            assetBundleName: 
+            assetBundleVariant: 
+          EOF
+          fi
+      
+      - name: Update README for UPM
+        run: |
+          # Add UPM installation instructions to README
+          cat > README_UPM.md << 'EOF'
+          # GeenzShade - Unity Package Manager Installation
+
+          ## Installation via Unity Package Manager
+
+          ### Option 1: Install via Git URL
+          1. Open Unity Package Manager (Window > Package Manager)
+          2. Click the '+' button in the top-left corner
+          3. Select "Add package from git URL..."
+          4. Enter: `https://github.com/${{ github.repository }}.git#upm`
+          5. Click 'Add'
+
+          ### Option 2: Install specific version
+          To install a specific version, append the version tag:
+          - `https://github.com/${{ github.repository }}.git#upm/v${{ steps.version.outputs.VERSION }}`
+
+          ### Option 3: Add to manifest.json
+          Add this line to your `Packages/manifest.json` dependencies:
+          ```json
+          "com.geenz.geenzshade": "https://github.com/${{ github.repository }}.git#upm"
+          ```
+
+          ---
+
+          EOF
+          
+          # Append original README content
+          cat README.md >> README_UPM.md
+          mv README_UPM.md README.md
+      
+      - name: Commit UPM package
+        run: |
+          git add -A
+          git commit -m "UPM package for version ${{ steps.version.outputs.VERSION }}"
+          
+          # Create version tag on UPM branch
+          git tag -a "upm/v${{ steps.version.outputs.VERSION }}" -m "UPM Release ${{ steps.version.outputs.VERSION }}"
+      
+      - name: Push UPM branch
+        run: |
+          git push origin upm --force
+          git push origin "upm/v${{ steps.version.outputs.VERSION }}"
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        with:
+          name: GeenzShade v${{ steps.version.outputs.VERSION }}
+          body: |
+            # GeenzShade v${{ steps.version.outputs.VERSION }}
+            
+            ## Installation via Unity Package Manager
+            
+            Add this Git URL in Unity Package Manager:
+            ```
+            https://github.com/${{ github.repository }}.git#upm
+            ```
+            
+            Or for this specific version:
+            ```
+            https://github.com/${{ github.repository }}.git#upm/v${{ steps.version.outputs.VERSION }}
+            ```
+            
+            ## What's Changed
+            See [commit history](https://github.com/${{ github.repository }}/commits/v${{ steps.version.outputs.VERSION }}) for details.
+            
+            ## Support
+            If you find GeenzShade useful, please consider supporting development on [Patreon](https://www.patreon.com/c/voidanchor)!
+          draft: false
+          prerelease: false
