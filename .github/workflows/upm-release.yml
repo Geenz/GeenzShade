@@ -66,17 +66,20 @@ jobs:
             rm -rf Assets
           fi
           
-          # Handle Samples~ folder - rename Examples to Samples~ if it exists
+          # Handle Samples~ folder
           if [ -d "Examples" ]; then
-            mkdir -p "Samples~"
-            mv Examples "Samples~/Material Examples"
-            # Remove the Examples.meta file since we're using Samples~
-            rm -f Examples.meta 2>/dev/null || true
-          fi
-          
-          # If Samples~ already exists (newer versions), ensure it's properly structured
-          if [ -d "Samples~" ] && [ ! -d "Samples~/Material Examples" ] && [ -d "Samples~/Examples" ]; then
-            mv "Samples~/Examples" "Samples~/Material Examples"
+            # If Examples exists, move it to Samples~/Material Examples
+            rm -rf "Samples~" 2>/dev/null || true
+            mkdir -p "Samples~/Material Examples"
+            cp -r Examples/* "Samples~/Material Examples/" 2>/dev/null || true
+            rm -rf Examples Examples.meta 2>/dev/null || true
+          elif [ -d "Samples~" ]; then
+            # If Samples~ already exists, ensure proper structure
+            if [ -d "Samples~/Material Examples/Examples" ]; then
+              # Fix nested Examples folder
+              mv "Samples~/Material Examples/Examples"/* "Samples~/Material Examples/" 2>/dev/null || true
+              rm -rf "Samples~/Material Examples/Examples" 2>/dev/null || true
+            fi
           fi
           
           # Clean up meta files that shouldn't be in package root
@@ -86,7 +89,7 @@ jobs:
         run: |
           cat > package.json << EOF
           {
-            "name": "com.geenz.geenzshade",
+            "name": "xyz.geenz.geenzshade",
             "version": "${{ steps.version.outputs.VERSION }}",
             "displayName": "GeenzShade",
             "description": "A collection of shaders by Geenz. Includes advanced PBR shaders with glTF 2.0 support.",
@@ -191,7 +194,7 @@ jobs:
           ### Option 3: Add to manifest.json
           Add this line to your `Packages/manifest.json` dependencies:
           ```json
-          "com.geenz.geenzshade": "https://github.com/${{ github.repository }}.git#upm"
+          "xyz.geenz.geenzshade": "https://github.com/${{ github.repository }}.git#upm"
           ```
 
           ---
