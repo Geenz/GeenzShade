@@ -1,0 +1,64 @@
+
+
+name: Create Unity Package
+
+on: 
+  workflow_run:
+    workflows: ["Update Unity UPM semantic versioning"]
+    branches: [master]
+    types:
+      - completed
+
+jobs:
+  create:
+    name: Generate the Unity package file
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set current date as env variable 
+      id: date
+      run: echo "::set-output name=date::$(date +'%Y%m%d')" 
+
+    - name: Make sure we have an output directory for the legacy package
+      run: mkdir legacyPackage
+
+    - name: Push package directory to subtree
+      uses: s0/git-publish-subdir-action@develop
+      env:
+        REPO: self
+        BRANCH: upm 
+        FOLDER: Assets/BigfootDS/BigfootUnityUtilities/
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
+
+    - name: Build legacy Unity package
+      run: |
+        echo "Assets/BigfootDS/BigfootUnityUtilities/Runtime.meta" > metaList
+        find Assets/BigfootDS/BigfootUnityUtilities/Runtime/ -name \*.meta >> metaList
+  
+    - uses: pCYSl5EDgo/create-unitypackage@master
+      with:
+        package-path: 'legacyPackage/${{ github.event.repository.name }}_${{ steps.date.outputs.date }}_${{ github.run_number }}.unitypackage'
+        include-files: metaList
+
+
+    - name: Upload legacy Unity package to repository Releases section
+
+      uses: actions/upload-artifact@master
+      with:
+        path: legacyPackage
+        name: ${{ github.event.repository.name }}_${{ steps.date.outputs.date }}_${{ github.run_number }}Package
+    
+    - name: Create release
+      uses: fnkr/github-action-ghr@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      env: 
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GHR_PATH: legacyPackage
+        # GHR_COMPRESS: zip
+
+
