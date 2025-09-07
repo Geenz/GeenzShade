@@ -5,9 +5,11 @@ If you use my work, please considering supporting further development by contrib
 
 ## Why open source?
 
-Most shaders generally aren't doing anything particularly novel, and the value you extract from them is almost always going to be in that they're conveniently available.  Anyone can learn how to make these things, so I'd rather give out the shader for free, and provide tools on top for an added fee than try to sell soemthing that many people have figured out in some other form well before me that you can easily copy and paste with just a little bit of know how.
+Most shaders generally aren't doing anything particularly novel, and the value you extract from them is almost always going to be in that they're conveniently available.  Anyone can learn how to make these things, so I'd rather give out the shader for free, and provide tools on top for an added fee than try to sell something that many people have figured out in some other form well before me that you can easily copy and paste with just a little bit of know how.
 
 ## Installation via Unity Package Manager
+
+Note: You are going to need to make sure VRC light volumes are in your project.  Please follow these instructions for how to install light volumes to your project: https://github.com/REDSIM/VRCLightVolumes?tab=readme-ov-file#Installation-through-VRChat-Creator-Companion
 
 ### Option 1: Install via Git URL
 1. Open Unity Package Manager (Window > Package Manager)
@@ -27,7 +29,7 @@ Add this line to your `Packages/manifest.json` dependencies:
 ```
 
 ## GzPBR
-A comprehensive, physically-based rendering (PBR) shader system for Unity that implements the glTF 2.0 specification with advanced material extensions. GeenzShade provides a high-quality, artist-friendly shader solution with support for modern rendering techniques and VRChat-specific goodies such as light volumes.
+A comprehensive, physically-based rendering (PBR) shader system for Unity that implements the glTF 2.0 specification with advanced material extensions. GeenzShade provides an artist-friendly shader solution with support for modern rendering techniques and VRChat-specific goodies such as light volumes.
 
 ### Features
 
@@ -170,6 +172,8 @@ Just some stuff that will land here eventually, in no particular order or priori
 ### GzPBR
 
 - Amplify Shader Editor nodes
+- Support for static lighting on static surfaces
+    - Currently optimized for dynamic objects like avatars.
 - These need grab passes, so I'm not in a rush to support them:
     - Support for khr_materials_volume
     - Support for khr_materials_dispersion
