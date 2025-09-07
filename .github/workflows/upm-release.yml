@@ -66,6 +66,19 @@ jobs:
             rm -rf Assets
           fi
           
+          # Handle Samples~ folder - rename Examples to Samples~ if it exists
+          if [ -d "Examples" ]; then
+            mkdir -p "Samples~"
+            mv Examples "Samples~/Material Examples"
+            # Remove the Examples.meta file since we're using Samples~
+            rm -f Examples.meta 2>/dev/null || true
+          fi
+          
+          # If Samples~ already exists (newer versions), ensure it's properly structured
+          if [ -d "Samples~" ] && [ ! -d "Samples~/Material Examples" ] && [ -d "Samples~/Examples" ]; then
+            mv "Samples~/Examples" "Samples~/Material Examples"
+          fi
+          
           # Clean up meta files that shouldn't be in package root
           find . -name "*.meta" -path "./.*" -delete 2>/dev/null || true
       
