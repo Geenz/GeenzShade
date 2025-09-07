@@ -14,12 +14,16 @@ on:
 jobs:
   create-upm-package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Determine version
         id: version
@@ -188,8 +192,8 @@ jobs:
       
       - name: Push UPM branch
         run: |
-          git push origin upm --force
-          git push origin "upm/v${{ steps.version.outputs.VERSION }}"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git upm --force
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "upm/v${{ steps.version.outputs.VERSION }}"
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
