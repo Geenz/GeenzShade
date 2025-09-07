@@ -1046,7 +1046,19 @@ namespace GeenzShade
             var prop = FindProperty(propertyName, properties);
             if (prop != null && prop.type == MaterialProperty.PropType.Texture)
             {
-                if (prop.textureValue != null)
+                // Check if there's a corresponding toggle property
+                string toggleName = propertyName.Replace("Texture", "").Insert(0, "_Use") + "Texture";
+                var toggleProp = FindProperty(toggleName, properties);
+                
+                bool shouldEnable = prop.textureValue != null;
+                
+                // If there's a toggle, also check its value
+                if (toggleProp != null && toggleProp.type == MaterialProperty.PropType.Float)
+                {
+                    shouldEnable = shouldEnable && (toggleProp.floatValue > 0);
+                }
+                
+                if (shouldEnable)
                     material.EnableKeyword(keyword);
                 else
                     material.DisableKeyword(keyword);

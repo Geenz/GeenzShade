@@ -180,7 +180,7 @@ Shader "GeenzShade/GzPBR"
             
             // Shader features
             #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
-            #pragma shader_feature_local USE_MRO_TEXTURE
+            #pragma shader_feature_local USE_ORM_TEXTURE
             #pragma shader_feature_local USE_NORMAL_TEXTURE
             #pragma shader_feature_local USE_CLEARCOAT_NORMAL_TEXTURE
             #pragma shader_feature_local USE_EMISSIVE_TEXTURE
@@ -370,7 +370,7 @@ Shader "GeenzShade/GzPBR"
             
             // Shader features
             #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
-            #pragma shader_feature_local USE_MRO_TEXTURE
+            #pragma shader_feature_local USE_ORM_TEXTURE
             #pragma shader_feature_local USE_NORMAL_TEXTURE
             #pragma shader_feature_local USE_CLEARCOAT_NORMAL_TEXTURE
             #pragma shader_feature_local USE_EMISSIVE_TEXTURE
