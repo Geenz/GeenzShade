@@ -1,5 +1,5 @@
 {
-  "name": "com.geenz.geenzshade",
+  "name": "xyz.geenz.geenzshade",
   "version": "1.0.0",
   "displayName": "GeenzShade",
   "description": "A collection of shaders by Geenz. Includes advanced PBR shaders with glTF 2.0 support.",
