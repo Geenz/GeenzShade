@@ -5,7 +5,7 @@ If you use my work, please considering supporting further development by contrib
 
 ## Why open source?
 
-Most shaders generally aren't doing anything particularly novel, and the value you extract from them is almost always going to be in that they're conveniently available.  Anyone can learn how to make these things, so I'd rather give out the shader for free, and provide tools on top for an added fee than try to sell soemthing that many people have figured out in some other form well before me that you can easily copy and paste with just a little bit of know how.
+Most shaders generally aren't doing anything particularly novel, and the value you extract from them is almost always going to be in that they're conveniently available.  Anyone can learn how to make these things, so I'd rather give out the shader for free, and provide tools on top for an added fee than try to sell something that many people have figured out in some other form well before me that you can easily copy and paste with just a little bit of know how.
 
 ## Installation via Unity Package Manager
 
@@ -27,7 +27,7 @@ Add this line to your `Packages/manifest.json` dependencies:
 ```
 
 ## GzPBR
-A comprehensive, physically-based rendering (PBR) shader system for Unity that implements the glTF 2.0 specification with advanced material extensions. GeenzShade provides a high-quality, artist-friendly shader solution with support for modern rendering techniques and VRChat-specific goodies such as light volumes.
+A comprehensive, physically-based rendering (PBR) shader system for Unity that implements the glTF 2.0 specification with advanced material extensions. GeenzShade provides an artist-friendly shader solution with support for modern rendering techniques and VRChat-specific goodies such as light volumes.
 
 ### Features
 
