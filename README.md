@@ -9,6 +9,8 @@ Most shaders generally aren't doing anything particularly novel, and the value y
 
 ## Installation via Unity Package Manager
 
+Note: You are going to need to make sure VRC light volumes are in your project.  Please follow these instructions for how to install light volumes to your project: https://github.com/REDSIM/VRCLightVolumes?tab=readme-ov-file#Installation-through-VRChat-Creator-Companion
+
 ### Option 1: Install via Git URL
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click the '+' button in the top-left corner
@@ -170,6 +172,8 @@ Just some stuff that will land here eventually, in no particular order or priori
 ### GzPBR
 
 - Amplify Shader Editor nodes
+- Support for static lighting on static surfaces
+    - Currently optimized for dynamic objects like avatars.
 - These need grab passes, so I'm not in a rush to support them:
     - Support for khr_materials_volume
     - Support for khr_materials_dispersion
