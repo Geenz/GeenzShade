@@ -197,8 +197,6 @@ Shader "GeenzShade/GzPBR"
             #pragma shader_feature_local USE_ENVIRONMENT_REFLECTION
             #pragma shader_feature_local USE_VRC_LIGHT_VOLUMES
             #pragma shader_feature_local USE_SPECULAR_ANTIALIASING
-            #pragma shader_feature_local DEBUG_DEPTH_FADE
-            #pragma shader_feature_local _DEBUGDEPTHMODE_FADE_RESULT _DEBUGDEPTHMODE_CAMERA_DEPTH _DEBUGDEPTHMODE_FRAGMENT_DEPTH
             
             #pragma shader_feature_local _RENDERMODE_OPAQUE _RENDERMODE_CUTOUT _RENDERMODE_TRANSPARENT _RENDERMODE_PREMULTIPLIEDALPHA
             #pragma shader_feature_local _VERTEXLIGHTS_OFF _VERTEXLIGHTS_ON
@@ -234,12 +232,6 @@ Shader "GeenzShade/GzPBR"
                 // Alpha test for cutout mode
                 #ifdef _RENDERMODE_CUTOUT
                     clip(matData.alpha - _AlphaCutoff);
-                #endif
-                
-                // Calculate depth fade
-                half depthFade = 1.0;
-                #ifdef _RENDERMODE_TRANSPARENT
-                    depthFade = GzCalculateDepthFade(i.screenPos);
                 #endif
                 
                 // Gather indirect lighting
@@ -315,38 +307,9 @@ Shader "GeenzShade/GzPBR"
                 // Apply fog
                 UNITY_APPLY_FOG(i.fogCoord, finalColor);
                 
-                // Apply depth fade to alpha
-                #if defined(_RENDERMODE_TRANSPARENT) || defined(_RENDERMODE_PREMULTIPLIEDALPHA)
-                    matData.alpha *= depthFade;
-                #endif
-                
                 // Premultiply alpha for proper blending
                 #ifdef _RENDERMODE_PREMULTIPLIEDALPHA
                     finalColor *= matData.alpha;
-                #endif
-                
-                // Debug depth fade visualization
-                #ifdef DEBUG_DEPTH_FADE
-                    #ifdef _RENDERMODE_TRANSPARENT
-                        // Get depth values for debugging
-                        float rawDepth = SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screenPos));
-                        float cameraDepth = LinearEyeDepth(rawDepth) * 0.1; // Scale for visibility
-                        float fragmentDepth = i.screenPos.w * 0.1; // Scale for visibility
-                        
-                        #ifdef _DEBUGDEPTHMODE_CAMERA_DEPTH
-                            // Show camera depth buffer (what's in _CameraDepthTexture)
-                            return half4(cameraDepth, cameraDepth, cameraDepth, 1.0);
-                        #elif defined(_DEBUGDEPTHMODE_FRAGMENT_DEPTH)
-                            // Show fragment depth (this transparent object's depth)
-                            return half4(fragmentDepth, fragmentDepth, fragmentDepth, 1.0);
-                        #else // _DEBUGDEPTHMODE_FADE_RESULT (default)
-                            // Show depth fade result: black = fully faded, white = no fade
-                            return half4(depthFade, depthFade, depthFade, 1.0);
-                        #endif
-                    #else
-                        // For non-transparent modes, show a warning color
-                        return half4(1, 0, 1, 1); // Magenta to indicate depth fade only works in transparent mode
-                    #endif
                 #endif
                 
                 return half4(finalColor, matData.alpha);
@@ -419,12 +382,6 @@ Shader "GeenzShade/GzPBR"
                     clip(matData.alpha - _AlphaCutoff);
                 #endif
                 
-                // Calculate depth fade
-                half depthFade = 1.0;
-                #ifdef _RENDERMODE_TRANSPARENT
-                    depthFade = GzCalculateDepthFadeAdd(i.screenPos);
-                #endif
-                
                 // Create lighting context for additive light
                 GzLightingContext ctx = GzCreateAdditiveLightContext(i, matData.normal);
                 
@@ -439,11 +396,8 @@ Shader "GeenzShade/GzPBR"
                 // Apply fog
                 UNITY_APPLY_FOG_COLOR(i.fogCoord, color, half4(0,0,0,0));
                 
-                // Apply depth fade to alpha
+                // Apply alpha
                 half alpha = matData.alpha;
-                #if defined(_RENDERMODE_TRANSPARENT) || defined(_RENDERMODE_PREMULTIPLIEDALPHA)
-                    alpha *= depthFade;
-                #endif
                 
                 // Premultiply alpha for proper blending
                 #ifdef _RENDERMODE_PREMULTIPLIEDALPHA

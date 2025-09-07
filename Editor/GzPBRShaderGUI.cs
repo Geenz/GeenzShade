@@ -8,6 +8,7 @@
 using UnityEngine;
 using UnityEditor;
 using System;
+using System.IO;
 
 namespace GeenzShade
 {
@@ -21,8 +22,11 @@ namespace GeenzShade
         private static bool diffuseTransmissionFoldout = false;
         private static bool lightingFoldout = false;
         private static bool environmentFoldout = false;
-        private static bool depthFadeFoldout = false;
         private static bool specularFoldout = false;
+        
+        // Light Volumes detection
+        private static bool? lightVolumesInstalled = null;
+        private const string LIGHT_VOLUMES_PATH = "Packages/red.sim.lightvolumes/Shaders/LightVolumes.cginc";
 
         public enum RenderMode
         {
@@ -67,6 +71,15 @@ namespace GeenzShade
         {
             base.AssignNewShaderToMaterial(material, oldShader, newShader);
             var properties = MaterialEditor.GetMaterialProperties(new Material[] { material });
+            
+            // Auto-configure light volumes based on availability
+            var useVRCLightVolumesProp = FindProperty("_UseVRCLightVolumes", properties);
+            if (useVRCLightVolumesProp != null)
+            {
+                bool hasLightVolumes = CheckLightVolumesInstalled();
+                useVRCLightVolumesProp.floatValue = hasLightVolumes ? 1.0f : 0.0f;
+            }
+            
             UpdateMaterialKeywords(material, properties);
         }
 
@@ -262,9 +275,6 @@ namespace GeenzShade
             
             // Environment Properties
             DrawEnvironmentProperties(materialEditor, properties, material);
-            
-            // Depth Fade Properties
-            DrawDepthFadeProperties(materialEditor, properties, material);
         }
 
         private void DrawBaseProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
@@ -278,6 +288,12 @@ namespace GeenzShade
             if (baseColorTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Base Color Texture (RGB=Color, A=Alpha)", "RGB: Albedo/diffuse color\nAlpha: Transparency/opacity"), baseColorTextureProp);
+                if (baseColorTextureProp.textureValue != null)
+                {
+                    EditorGUI.indentLevel++;
+                    materialEditor.TextureScaleOffsetProperty(baseColorTextureProp);
+                    EditorGUI.indentLevel--;
+                }
             }
 
             // Base Color COLOR property SEPARATE
@@ -292,6 +308,12 @@ namespace GeenzShade
             if (ormTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("ORM Texture (R=Occlusion, G=Roughness, B=Metallic)", "Red: Ambient occlusion (0=occluded, 1=unoccluded)\nGreen: Roughness (0=glossy, 1=rough)\nBlue: Metallic (0=dielectric, 1=metal)"), ormTextureProp);
+                if (ormTextureProp.textureValue != null)
+                {
+                    EditorGUI.indentLevel++;
+                    materialEditor.TextureScaleOffsetProperty(ormTextureProp);
+                    EditorGUI.indentLevel--;
+                }
             }
 
             // Occlusion FACTOR not Strength
@@ -328,6 +350,7 @@ namespace GeenzShade
                     {
                         normalScaleProp.floatValue = EditorGUILayout.Slider("Normal Scale", normalScaleProp.floatValue, 0f, 1f);
                     }
+                    materialEditor.TextureScaleOffsetProperty(normalMapProp);
                     EditorGUI.indentLevel--;
                     CheckNormalMapImportSettings(normalMapProp.textureValue);
                 }
@@ -338,6 +361,12 @@ namespace GeenzShade
             if (emissiveTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Emissive Texture (RGB=Glow Color)", "RGB: Emission color (multiplied by Emissive Factor)"), emissiveTextureProp);
+                if (emissiveTextureProp.textureValue != null)
+                {
+                    EditorGUI.indentLevel++;
+                    materialEditor.TextureScaleOffsetProperty(emissiveTextureProp);
+                    EditorGUI.indentLevel--;
+                }
             }
 
             // Emissive FACTOR color separate
@@ -417,13 +446,14 @@ namespace GeenzShade
                         
                         if (clearcoatNormalTextureProp.textureValue != null)
                         {
+                            EditorGUI.indentLevel++;
                             var clearcoatNormalScaleProp = FindProperty("_ClearcoatNormalScale", properties);
                             if (clearcoatNormalScaleProp != null)
                             {
-                                EditorGUI.indentLevel++;
                                 clearcoatNormalScaleProp.floatValue = EditorGUILayout.Slider("Clearcoat Normal Scale", clearcoatNormalScaleProp.floatValue, 0f, 1f);
-                                EditorGUI.indentLevel--;
                             }
+                            materialEditor.TextureScaleOffsetProperty(clearcoatNormalTextureProp);
+                            EditorGUI.indentLevel--;
                         }
                     }
                     
@@ -431,6 +461,12 @@ namespace GeenzShade
                     if (clearcoatIridescenceTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat/Iridescence (R=Clear, G=Rough, B=Irid, A=Thick)", "Red: Clearcoat intensity (0=none, 1=full)\nGreen: Clearcoat roughness (0=glossy, 1=rough)\nBlue: Iridescence intensity (0=none, 1=full)\nAlpha: Iridescence thickness (0=min, 1=max)"), clearcoatIridescenceTextureProp);
+                        if (clearcoatIridescenceTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(clearcoatIridescenceTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     EditorGUI.indentLevel--;
@@ -470,6 +506,12 @@ namespace GeenzShade
                     if (clearcoatIridescenceTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat/Iridescence (R=Clear, G=Rough, B=Irid, A=Thick)", "Red: Clearcoat intensity (0=none, 1=full)\nGreen: Clearcoat roughness (0=glossy, 1=rough)\nBlue: Iridescence intensity (0=none, 1=full)\nAlpha: Iridescence thickness (0=min, 1=max)"), clearcoatIridescenceTextureProp);
+                        if (clearcoatIridescenceTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(clearcoatIridescenceTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     var iridescenceFactorProp = FindProperty("_IridescenceFactor", properties);
@@ -547,6 +589,12 @@ namespace GeenzShade
                     if (sheenTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Sheen Texture (RGB=Color, A=Roughness)", "RGB: Sheen color tint\nAlpha: Sheen roughness (0=smooth, 1=rough)"), sheenTextureProp);
+                        if (sheenTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(sheenTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     var sheenColorProp = FindProperty("_SheenColor", properties);
@@ -617,6 +665,12 @@ namespace GeenzShade
                         if (diffuseTransmissionTextureProp != null)
                         {
                             materialEditor.TexturePropertySingleLine(new GUIContent("Transmission Texture (RGB=Color, A=Amount)", "RGB: Color of transmitted light\nAlpha: Transmission amount (0=opaque, 1=fully transmissive)\nNote: Combines glTF diffuseTransmissionTexture and diffuseTransmissionColorTexture"), diffuseTransmissionTextureProp);
+                            if (diffuseTransmissionTextureProp.textureValue != null)
+                            {
+                                EditorGUI.indentLevel++;
+                                materialEditor.TextureScaleOffsetProperty(diffuseTransmissionTextureProp);
+                                EditorGUI.indentLevel--;
+                            }
                         }
                         
                         var diffuseTransmissionColorFactorProp = FindProperty("_DiffuseTransmissionColorFactor", properties);
@@ -634,6 +688,15 @@ namespace GeenzShade
             }
         }
 
+        private bool CheckLightVolumesInstalled()
+        {
+            if (lightVolumesInstalled == null)
+            {
+                lightVolumesInstalled = File.Exists(Path.Combine(Application.dataPath.Replace("/Assets", ""), LIGHT_VOLUMES_PATH));
+            }
+            return lightVolumesInstalled.Value;
+        }
+        
         private void DrawLightingProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
         {
             lightingFoldout = EditorGUILayout.Foldout(lightingFoldout, "Lighting", true);
@@ -641,6 +704,49 @@ namespace GeenzShade
             if (lightingFoldout)
             {
                 EditorGUI.indentLevel++;
+                
+                // Check for VRC Light Volumes
+                bool hasLightVolumes = CheckLightVolumesInstalled();
+                
+                // VRC Light Volumes toggle
+                var useVRCLightVolumesProp = FindProperty("_UseVRCLightVolumes", properties);
+                if (useVRCLightVolumesProp != null)
+                {
+                    if (!hasLightVolumes)
+                    {
+                        EditorGUILayout.HelpBox(
+                            "VRC Light Volumes are not installed. The shader may fail to compile without them.\n" +
+                            "Click the button below for installation instructions.",
+                            MessageType.Error);
+                        
+                        if (GUILayout.Button("Open Installation Instructions"))
+                        {
+                            Application.OpenURL("https://github.com/REDSIM/VRCLightVolumes?tab=readme-ov-file#Installation-through-VRChat-Creator-Companion");
+                        }
+                        
+                        EditorGUILayout.Space();
+                    }
+                    else
+                    {
+                        EditorGUILayout.HelpBox("VRC Light Volumes detected and ready to use!", MessageType.Info);
+                    }
+                    
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Use VRC Light Volumes", "Enable support for VRChat Light Volumes system"),
+                        GUILayout.Width(EditorGUIUtility.labelWidth));
+                    
+                    bool useVRCLightVolumes = useVRCLightVolumesProp.floatValue > 0.5f;
+                    bool newUseVRCLightVolumes = EditorGUILayout.Toggle(useVRCLightVolumes);
+                    
+                    if (newUseVRCLightVolumes != useVRCLightVolumes)
+                    {
+                        useVRCLightVolumesProp.floatValue = newUseVRCLightVolumes ? 1.0f : 0.0f;
+                    }
+                    EditorGUILayout.EndHorizontal();
+                    
+                    EditorGUILayout.Space();
+                }
                 
                 var vertexLightsProp = FindProperty("_VertexLights", properties);
                 if (vertexLightsProp != null)
@@ -672,6 +778,16 @@ namespace GeenzShade
                         shDominantLightProp.floatValue = newSHDominant ? 1.0f : 0.0f;
                     }
                     EditorGUILayout.EndHorizontal();
+                }
+                
+                // Light Intensity Multiplier
+                var lightIntensityMultiplierProp = FindProperty("_LightIntensityMultiplier", properties);
+                if (lightIntensityMultiplierProp != null)
+                {
+                    EditorGUILayout.Space();
+                    lightIntensityMultiplierProp.floatValue = EditorGUILayout.Slider(
+                        new GUIContent("Light Intensity Multiplier", "Global multiplier for all light sources"),
+                        lightIntensityMultiplierProp.floatValue, 0.1f, 10f);
                 }
                 
                 EditorGUI.indentLevel--;
@@ -769,77 +885,6 @@ namespace GeenzShade
             }
         }
 
-        private void DrawDepthFadeProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
-        {
-            // Only show depth fade for non-opaque render modes
-            var renderModeProp = FindProperty("_RenderMode", properties);
-            if (renderModeProp == null) return;
-            
-            RenderMode currentMode = (RenderMode)renderModeProp.floatValue;
-            if (currentMode == RenderMode.Opaque || currentMode == RenderMode.Cutout) return;
-            
-            var useDepthFadeProp = FindProperty("_UseDepthFade", properties);
-            if (useDepthFadeProp == null) return;
-
-            depthFadeFoldout = EditorGUILayout.Foldout(depthFadeFoldout, "Depth Fade", true);
-            
-            if (depthFadeFoldout)
-            {
-                EditorGUI.indentLevel++;
-                
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("Enable Depth Fade", GUILayout.Width(EditorGUIUtility.labelWidth));
-                bool useDepthFade = useDepthFadeProp.floatValue > 0.5f;
-                bool newUseDepthFade = EditorGUILayout.Toggle(useDepthFade);
-                if (newUseDepthFade != useDepthFade)
-                {
-                    useDepthFadeProp.floatValue = newUseDepthFade ? 1.0f : 0.0f;
-                }
-                EditorGUILayout.EndHorizontal();
-                
-                if (newUseDepthFade)
-                {
-                    EditorGUI.indentLevel++;
-                    
-                    var depthFadeProp = FindProperty("_DepthFade", properties);
-                    if (depthFadeProp != null)
-                    {
-                        depthFadeProp.floatValue = EditorGUILayout.FloatField("Depth Fade Distance", depthFadeProp.floatValue);
-                    }
-                    
-                    var depthFadePowerProp = FindProperty("_DepthFadePower", properties);
-                    if (depthFadePowerProp != null)
-                    {
-                        depthFadePowerProp.floatValue = EditorGUILayout.Slider("Depth Fade Power", depthFadePowerProp.floatValue, 0.1f, 10f);
-                    }
-                    
-                    var depthFadeOffsetProp = FindProperty("_DepthFadeOffset", properties);
-                    if (depthFadeOffsetProp != null)
-                    {
-                        depthFadeOffsetProp.floatValue = EditorGUILayout.FloatField("Depth Fade Offset", depthFadeOffsetProp.floatValue);
-                    }
-                    
-                    var debugDepthFadeProp = FindProperty("_DebugDepthFade", properties);
-                    if (debugDepthFadeProp != null)
-                    {
-                        EditorGUILayout.BeginHorizontal();
-                        EditorGUILayout.LabelField("Debug Depth Fade", GUILayout.Width(EditorGUIUtility.labelWidth));
-                        bool debugDepthFade = debugDepthFadeProp.floatValue > 0.5f;
-                        bool newDebugDepthFade = EditorGUILayout.Toggle(debugDepthFade);
-                        if (newDebugDepthFade != debugDepthFade)
-                        {
-                            debugDepthFadeProp.floatValue = newDebugDepthFade ? 1.0f : 0.0f;
-                        }
-                        EditorGUILayout.EndHorizontal();
-                    }
-                    
-                    EditorGUI.indentLevel--;
-                }
-                
-                EditorGUI.indentLevel--;
-            }
-        }
-
         private void DrawSpecularExtensionProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
         {
             var useSpecularExtensionProp = FindProperty("_UseSpecularExtension", properties);
@@ -869,6 +914,12 @@ namespace GeenzShade
                     if (specularTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Specular Texture (RGB=Color, A=Strength)", "RGB: Specular color tint (for dielectrics)\nAlpha: Specular strength multiplier"), specularTextureProp);
+                        if (specularTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(specularTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     var specularFactorProp = FindProperty("_SpecularFactor", properties);
@@ -1028,6 +1079,7 @@ namespace GeenzShade
             UpdateFeatureKeyword(material, properties, "_UseDiffuseTransmission", "USE_DIFFUSE_TRANSMISSION");
             UpdateFeatureKeyword(material, properties, "_UseEnvironmentReflection", "USE_ENVIRONMENT_REFLECTION");
             UpdateFeatureKeyword(material, properties, "_UseSpecularAntialiasing", "USE_SPECULAR_ANTIALIASING");
+            UpdateFeatureKeyword(material, properties, "_UseVRCLightVolumes", "USE_VRC_LIGHT_VOLUMES");
             
             // Lighting keywords
             UpdateFeatureKeyword(material, properties, "_VertexLights", "VERTEXLIGHT_ON");
@@ -1036,9 +1088,6 @@ namespace GeenzShade
             
             UpdateFeatureKeyword(material, properties, "_SHDominantLight", "_SHDOMINANTLIGHT_ON");
             UpdateFeatureKeywordInverse(material, properties, "_SHDominantLight", "_SHDOMINANTLIGHT_OFF");
-            
-            // Debug keywords
-            UpdateFeatureKeyword(material, properties, "_DebugDepthFade", "DEBUG_DEPTH_FADE");
         }
 
         private void UpdateTextureKeyword(Material material, MaterialProperty[] properties, string propertyName, string keyword)

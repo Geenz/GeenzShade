@@ -13,13 +13,13 @@ Material:
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
   - USE_ENVIRONMENT_REFLECTION
-  - USE_MRO_TEXTURE
   - USE_SPECULAR_EXTENSION
   - VERTEXLIGHT_ON
   - _RENDERMODE_OPAQUE
   - _SHDOMINANTLIGHT_ON
   - _VERTEXLIGHTS_ON
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - USE_MRO_TEXTURE
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -71,7 +71,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _FallbackCubemap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 8900000, guid: b6eb4aacc1caa1d4aad4748d6bdda089, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MROTexture:
@@ -129,21 +129,21 @@ Material:
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
-    - _IOR: 1.5
+    - _IOR: 3
     - _IridescenceFactor: 0
     - _IridescenceIOR: 1.3
     - _IridescenceThickness: 1
     - _IridescenceThicknessMax: 400
     - _IridescenceThicknessMin: 100
     - _LightIntensityMultiplier: 3
-    - _Metallic: 1
+    - _Metallic: 0.5
     - _Mode: 0
     - _NormalScale: 1
     - _OcclusionStrength: 1
     - _Parallax: 0.02
     - _ReflectionProbeThreshold: 0.1
     - _RenderMode: 0
-    - _Roughness: 1
+    - _Roughness: 0.3
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
     - _SheenRimBoost: 1

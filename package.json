@@ -1,6 +1,6 @@
 {
   "name": "xyz.geenz.geenzshade",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "displayName": "GeenzShade",
   "description": "A collection of shaders by Geenz. Includes advanced PBR shaders with glTF 2.0 support.",
   "unity": "2022.3",

@@ -204,19 +204,19 @@ half3 GzSampleNormalMap(sampler2D normalMap, float2 uv, half scale, half3x3 TBN)
 // ============================================
 
 // Apply final output with transparency
-half4 GzFinalOutput(half3 color, half alpha, half depthFade)
+half4 GzFinalOutput(half3 color, half alpha)
 {
     #ifdef _RENDERMODE_TRANSPARENT
-        return half4(color, alpha * depthFade);
+        return half4(color, alpha);
     #else
         return half4(color, 1.0);
     #endif
 }
 
 // Apply final output for additive pass
-half4 GzFinalOutputAdd(half3 color, half depthFade)
+half4 GzFinalOutputAdd(half3 color)
 {
-    return half4(color * depthFade, 0);
+    return half4(color, 0);
 }
 
 // ============================================
