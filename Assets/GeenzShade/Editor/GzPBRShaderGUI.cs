@@ -278,6 +278,12 @@ namespace GeenzShade
             if (baseColorTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Base Color Texture (RGB=Color, A=Alpha)", "RGB: Albedo/diffuse color\nAlpha: Transparency/opacity"), baseColorTextureProp);
+                if (baseColorTextureProp.textureValue != null)
+                {
+                    EditorGUI.indentLevel++;
+                    materialEditor.TextureScaleOffsetProperty(baseColorTextureProp);
+                    EditorGUI.indentLevel--;
+                }
             }
 
             // Base Color COLOR property SEPARATE
@@ -292,6 +298,12 @@ namespace GeenzShade
             if (ormTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("ORM Texture (R=Occlusion, G=Roughness, B=Metallic)", "Red: Ambient occlusion (0=occluded, 1=unoccluded)\nGreen: Roughness (0=glossy, 1=rough)\nBlue: Metallic (0=dielectric, 1=metal)"), ormTextureProp);
+                if (ormTextureProp.textureValue != null)
+                {
+                    EditorGUI.indentLevel++;
+                    materialEditor.TextureScaleOffsetProperty(ormTextureProp);
+                    EditorGUI.indentLevel--;
+                }
             }
 
             // Occlusion FACTOR not Strength
@@ -328,6 +340,7 @@ namespace GeenzShade
                     {
                         normalScaleProp.floatValue = EditorGUILayout.Slider("Normal Scale", normalScaleProp.floatValue, 0f, 1f);
                     }
+                    materialEditor.TextureScaleOffsetProperty(normalMapProp);
                     EditorGUI.indentLevel--;
                     CheckNormalMapImportSettings(normalMapProp.textureValue);
                 }
@@ -338,6 +351,12 @@ namespace GeenzShade
             if (emissiveTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Emissive Texture (RGB=Glow Color)", "RGB: Emission color (multiplied by Emissive Factor)"), emissiveTextureProp);
+                if (emissiveTextureProp.textureValue != null)
+                {
+                    EditorGUI.indentLevel++;
+                    materialEditor.TextureScaleOffsetProperty(emissiveTextureProp);
+                    EditorGUI.indentLevel--;
+                }
             }
 
             // Emissive FACTOR color separate
@@ -417,13 +436,14 @@ namespace GeenzShade
                         
                         if (clearcoatNormalTextureProp.textureValue != null)
                         {
+                            EditorGUI.indentLevel++;
                             var clearcoatNormalScaleProp = FindProperty("_ClearcoatNormalScale", properties);
                             if (clearcoatNormalScaleProp != null)
                             {
-                                EditorGUI.indentLevel++;
                                 clearcoatNormalScaleProp.floatValue = EditorGUILayout.Slider("Clearcoat Normal Scale", clearcoatNormalScaleProp.floatValue, 0f, 1f);
-                                EditorGUI.indentLevel--;
                             }
+                            materialEditor.TextureScaleOffsetProperty(clearcoatNormalTextureProp);
+                            EditorGUI.indentLevel--;
                         }
                     }
                     
@@ -431,6 +451,12 @@ namespace GeenzShade
                     if (clearcoatIridescenceTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat/Iridescence (R=Clear, G=Rough, B=Irid, A=Thick)", "Red: Clearcoat intensity (0=none, 1=full)\nGreen: Clearcoat roughness (0=glossy, 1=rough)\nBlue: Iridescence intensity (0=none, 1=full)\nAlpha: Iridescence thickness (0=min, 1=max)"), clearcoatIridescenceTextureProp);
+                        if (clearcoatIridescenceTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(clearcoatIridescenceTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     EditorGUI.indentLevel--;
@@ -470,6 +496,12 @@ namespace GeenzShade
                     if (clearcoatIridescenceTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat/Iridescence (R=Clear, G=Rough, B=Irid, A=Thick)", "Red: Clearcoat intensity (0=none, 1=full)\nGreen: Clearcoat roughness (0=glossy, 1=rough)\nBlue: Iridescence intensity (0=none, 1=full)\nAlpha: Iridescence thickness (0=min, 1=max)"), clearcoatIridescenceTextureProp);
+                        if (clearcoatIridescenceTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(clearcoatIridescenceTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     var iridescenceFactorProp = FindProperty("_IridescenceFactor", properties);
@@ -547,6 +579,12 @@ namespace GeenzShade
                     if (sheenTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Sheen Texture (RGB=Color, A=Roughness)", "RGB: Sheen color tint\nAlpha: Sheen roughness (0=smooth, 1=rough)"), sheenTextureProp);
+                        if (sheenTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(sheenTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     var sheenColorProp = FindProperty("_SheenColor", properties);
@@ -617,6 +655,12 @@ namespace GeenzShade
                         if (diffuseTransmissionTextureProp != null)
                         {
                             materialEditor.TexturePropertySingleLine(new GUIContent("Transmission Texture (RGB=Color, A=Amount)", "RGB: Color of transmitted light\nAlpha: Transmission amount (0=opaque, 1=fully transmissive)\nNote: Combines glTF diffuseTransmissionTexture and diffuseTransmissionColorTexture"), diffuseTransmissionTextureProp);
+                            if (diffuseTransmissionTextureProp.textureValue != null)
+                            {
+                                EditorGUI.indentLevel++;
+                                materialEditor.TextureScaleOffsetProperty(diffuseTransmissionTextureProp);
+                                EditorGUI.indentLevel--;
+                            }
                         }
                         
                         var diffuseTransmissionColorFactorProp = FindProperty("_DiffuseTransmissionColorFactor", properties);
@@ -869,6 +913,12 @@ namespace GeenzShade
                     if (specularTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Specular Texture (RGB=Color, A=Strength)", "RGB: Specular color tint (for dielectrics)\nAlpha: Specular strength multiplier"), specularTextureProp);
+                        if (specularTextureProp.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(specularTextureProp);
+                            EditorGUI.indentLevel--;
+                        }
                     }
                     
                     var specularFactorProp = FindProperty("_SpecularFactor", properties);

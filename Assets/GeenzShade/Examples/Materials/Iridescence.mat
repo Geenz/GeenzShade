@@ -14,12 +14,12 @@ Material:
   m_ValidKeywords:
   - USE_ENVIRONMENT_REFLECTION
   - USE_IRIDESCENCE
-  - USE_MRO_TEXTURE
   - VERTEXLIGHT_ON
   - _RENDERMODE_OPAQUE
   - _SHDOMINANTLIGHT_ON
   - _VERTEXLIGHTS_ON
-  m_InvalidKeywords: []
+  m_InvalidKeywords:
+  - USE_MRO_TEXTURE
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
@@ -71,7 +71,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _FallbackCubemap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 8900000, guid: b6eb4aacc1caa1d4aad4748d6bdda089, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MROTexture:
