@@ -1,3 +1,26 @@
+# GeenzShade - Unity Package Manager Installation
+
+## Installation via Unity Package Manager
+
+### Option 1: Install via Git URL
+1. Open Unity Package Manager (Window > Package Manager)
+2. Click the '+' button in the top-left corner
+3. Select "Add package from git URL..."
+4. Enter: `https://github.com/Geenz/GeenzShade.git#upm`
+5. Click 'Add'
+
+### Option 2: Install specific version
+To install a specific version, append the version tag:
+- `https://github.com/Geenz/GeenzShade.git#upm/v0.1`
+
+### Option 3: Add to manifest.json
+Add this line to your `Packages/manifest.json` dependencies:
+```json
+"com.geenz.geenzshade": "https://github.com/Geenz/GeenzShade.git#upm"
+```
+
+---
+
 # GeenzShade
 This a collection of shaders that I'm building out with time.  These are just the basics - advanced tooling (such as texture packing) is planned as a paid add on that you can obtain through my [Patreon](https://www.patreon.com/c/voidanchor).
 
