@@ -267,9 +267,10 @@ Shader "GeenzShade/GzPBR"
                 
                 // DLM dominant light (reconstructed from lightmap directional data)
                 #if defined(LIGHTMAP_ON) && defined(DIRLIGHTMAP_COMBINED)
-                    GzLightingContext dlmCtx = GzCreateLightmapDominantLightContext(i.worldPos, matData.normal, i.lmap.xy);
+                    GzLightingContext dlmCtx = GzCreateLightmapDominantLightContext(i.worldPos, i.lmap.xy);
                     if (dlmCtx.lightAtten > 0)
                     {
+                        GzPopulateLightingVectors(dlmCtx, matData.normal);
                         half3 dlmLight = GzEvaluateLayerStack(matData, dlmCtx);
                         finalColor += dlmLight * dlmCtx.lightColor * dlmCtx.lightAtten;
                     }

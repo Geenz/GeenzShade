@@ -54,7 +54,7 @@ struct GzLightmapData
 };
 
 // Forward declaration
-GzLightmapData GzSampleLightmapComplete(float2 lightmapUV, half3 worldNormal);
+GzLightmapData GzSampleLightmapComplete(float2 lightmapUV);
 
 // ============================================
 // Light Context Creation
@@ -119,13 +119,13 @@ GzLightingContext GzCreateSHDominantLightContext(float3 worldPos, half3 normal)
 }
 
 // Create lighting context from reconstructed DLM data
-GzLightingContext GzCreateLightmapDominantLightContext(float3 worldPos, half3 normal, float2 lightmapUV)
+GzLightingContext GzCreateLightmapDominantLightContext(float3 worldPos, float2 lightmapUV)
 {
     GzLightingContext ctx = GzCreateLightingContext();
     
     #if defined(LIGHTMAP_ON) && defined(DIRLIGHTMAP_COMBINED)
         // Sample the complete lightmap data including directional information
-        GzLightmapData lmData = GzSampleLightmapComplete(lightmapUV, normal);
+        GzLightmapData lmData = GzSampleLightmapComplete(lightmapUV);
         
         if (lmData.lightAtten > 0.001 && length(lmData.dominantLightColor) > 0.001)
         {
@@ -134,8 +134,7 @@ GzLightingContext GzCreateLightmapDominantLightContext(float3 worldPos, half3 no
             ctx.lightColor = lmData.dominantLightColor;
             ctx.lightAtten = lmData.lightAtten;
             
-            // Populate vectors for full PBR shading
-            GzPopulateLightingVectors(ctx, normal);
+            // Note: Don't populate vectors here - let the caller do it with the appropriate normal
         }
     #endif
     
@@ -234,7 +233,7 @@ half GzGetAverageEnvironmentLuminance()
 // ============================================
 
 // Sample static lightmap and extract lighting data
-GzLightmapData GzSampleLightmapComplete(float2 lightmapUV, half3 worldNormal)
+GzLightmapData GzSampleLightmapComplete(float2 lightmapUV)
 {
     GzLightmapData lmData;
     lmData.diffuseColor = half3(0, 0, 0);
@@ -243,63 +242,21 @@ GzLightmapData GzSampleLightmapComplete(float2 lightmapUV, half3 worldNormal)
     lmData.lightAtten = 0;
     
     #ifdef LIGHTMAP_ON
-        // Sample the lightmap
         half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV);
         half3 bakedColor = DecodeLightmap(bakedColorTex);
         
         #ifdef DIRLIGHTMAP_COMBINED
-            // Sample directional lightmap
             half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV);
             
-            // Extract the dominant light direction from the directional lightmap
-            // Unity stores the dominant direction in world space in the directional texture
-            half3 dominantDir = bakedDirTex.xyz * 2.0 - 1.0; // Unpack from [0,1] to [-1,1]
-            dominantDir = normalize(dominantDir);
-            
-            // Calculate the diffuse lighting with the directional information
-            lmData.diffuseColor = DecodeDirectionalLightmap(bakedColor, bakedDirTex, worldNormal);
-            
-            // Reconstruct the dominant light color and intensity more carefully
-            // Unity's DLM stores the light direction and we need to extract a reasonable light color
-            half NoL = saturate(dot(worldNormal, dominantDir));
-            if (NoL > 0.001)
-            {
-                // Use the baked color intensity as the basis for light color
-                // Scale by a factor to account for the fact that we're extracting directional light
-                half lightIntensity = length(bakedColor);
-                lmData.dominantLightColor = bakedColor; // Use baked color directly
-                lmData.dominantLightDir = dominantDir;
-                
-                // Set attenuation based on the directional strength from DLM
-                // bakedDirTex.a contains the directional vs ambient balance
-                lmData.lightAtten = bakedDirTex.a * lightIntensity;
-            }
-            else
-            {
-                // Fallback when light is perpendicular/behind surface
-                lmData.dominantLightColor = bakedColor * 0.5; // Reduce intensity for grazing
-                lmData.dominantLightDir = dominantDir;
-                lmData.lightAtten = 0.2; // Lower fallback
-            }
-        #else
-            // No directional information available, use diffuse only
-            lmData.diffuseColor = bakedColor;
-            lmData.dominantLightDir = half3(0, 1, 0); // Default up direction
-            lmData.dominantLightColor = half3(0, 0, 0); // No specular from non-directional lightmaps
-            lmData.lightAtten = 0;
+            lmData.dominantLightDir = normalize(bakedDirTex.xyz * 2.0 - 1.0);
+            lmData.dominantLightColor = bakedColor;
+            lmData.lightAtten = bakedDirTex.a;
         #endif
-        
     #endif
     
     return lmData;
 }
 
-// Sample static lightmap (simple version for backward compatibility)
-half3 GzSampleLightmap(float2 lightmapUV, half3 worldNormal)
-{
-    GzLightmapData lmData = GzSampleLightmapComplete(lightmapUV, worldNormal);
-    return lmData.diffuseColor;
-}
 
 // Sample dynamic lightmap (realtime GI)
 half3 GzSampleDynamicLightmap(float2 dynamicLightmapUV, half3 worldNormal)
@@ -513,8 +470,15 @@ GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewD
     half3 lightmapDiffuse = half3(0, 0, 0);
     
     #ifdef LIGHTMAP_ON
-        // Use Unity's standard lightmap sampling - it handles DLM correctly
-        lightmapDiffuse += GzSampleLightmap(lightmapUV.xy, normal);
+        half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV.xy);
+        half3 bakedColor = DecodeLightmap(bakedColorTex);
+        
+        #ifdef DIRLIGHTMAP_COMBINED
+            half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV.xy);
+            lightmapDiffuse += DecodeDirectionalLightmap(bakedColor, bakedDirTex, normal);
+        #else
+            lightmapDiffuse += bakedColor;
+        #endif
     #endif
     
     #ifdef DYNAMICLIGHTMAP_ON
