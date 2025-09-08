@@ -41,6 +41,22 @@ half GzGetLightAttenuationAdd(GzVertexOutputAdd i, float3 worldPos)
 }
 
 // ============================================
+// Lightmap Data Structure
+// ============================================
+
+// Extract dominant light direction and color from DLM for full shading
+struct GzLightmapData
+{
+    half3 diffuseColor;
+    half3 dominantLightDir;
+    half3 dominantLightColor;
+    half lightAtten;
+};
+
+// Forward declaration
+GzLightmapData GzSampleLightmapComplete(float2 lightmapUV);
+
+// ============================================
 // Light Context Creation
 // ============================================
 
@@ -96,6 +112,29 @@ GzLightingContext GzCreateSHDominantLightContext(float3 worldPos, half3 normal)
             
             // Populate vectors
             GzPopulateLightingVectors(ctx, normal);
+        }
+    #endif
+    
+    return ctx;
+}
+
+// Create lighting context from reconstructed DLM data
+GzLightingContext GzCreateLightmapDominantLightContext(float3 worldPos, float2 lightmapUV)
+{
+    GzLightingContext ctx = GzCreateLightingContext();
+    
+    #if defined(LIGHTMAP_ON) && defined(DIRLIGHTMAP_COMBINED)
+        // Sample the complete lightmap data including directional information
+        GzLightmapData lmData = GzSampleLightmapComplete(lightmapUV);
+        
+        if (lmData.lightAtten > 0.001 && length(lmData.dominantLightColor) > 0.001)
+        {
+            ctx.lightDir = lmData.dominantLightDir;
+            ctx.viewDir = normalize(_WorldSpaceCameraPos - worldPos);
+            ctx.lightColor = lmData.dominantLightColor;
+            ctx.lightAtten = lmData.lightAtten;
+            
+            // Note: Don't populate vectors here - let the caller do it with the appropriate normal
         }
     #endif
     
@@ -187,6 +226,54 @@ half GzGetAverageEnvironmentLuminance()
     // Calculate average and convert to luminance
     half3 avgColor = (up + down + center) / 3.0;
     return dot(avgColor, half3(0.299, 0.587, 0.114));
+}
+
+// ============================================
+// Lightmap Sampling
+// ============================================
+
+// Sample static lightmap and extract lighting data
+GzLightmapData GzSampleLightmapComplete(float2 lightmapUV)
+{
+    GzLightmapData lmData;
+    lmData.diffuseColor = half3(0, 0, 0);
+    lmData.dominantLightDir = half3(0, 1, 0);
+    lmData.dominantLightColor = half3(0, 0, 0);
+    lmData.lightAtten = 0;
+    
+    #ifdef LIGHTMAP_ON
+        half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV);
+        half3 bakedColor = DecodeLightmap(bakedColorTex);
+        
+        #ifdef DIRLIGHTMAP_COMBINED
+            half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV);
+            
+            lmData.dominantLightDir = normalize(bakedDirTex.xyz * 2.0 - 1.0);
+            lmData.dominantLightColor = bakedColor;
+            lmData.lightAtten = bakedDirTex.a;
+        #endif
+    #endif
+    
+    return lmData;
+}
+
+
+// Sample dynamic lightmap (realtime GI)
+half3 GzSampleDynamicLightmap(float2 dynamicLightmapUV, half3 worldNormal)
+{
+    #ifdef DYNAMICLIGHTMAP_ON
+        half4 realtimeColorTex = UNITY_SAMPLE_TEX2D(unity_DynamicLightmap, dynamicLightmapUV);
+        half3 realtimeColor = DecodeRealtimeLightmap(realtimeColorTex);
+        
+        #ifdef DIRLIGHTMAP_COMBINED
+            half4 realtimeDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_DynamicDirectionality, unity_DynamicLightmap, dynamicLightmapUV);
+            realtimeColor = DecodeDirectionalLightmap(realtimeColor, realtimeDirTex, worldNormal);
+        #endif
+        
+        return realtimeColor;
+    #else
+        return half3(0, 0, 0);
+    #endif
 }
 
 // ============================================
@@ -370,17 +457,43 @@ half3 GzGetLightVolumeAmbient(float3 worldPos, half3 normal)
 
 // Gather all indirect lighting for ForwardBase
 GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewDir, 
-                                      half roughness, half occlusion)
+                                      half roughness, half occlusion, float4 lightmapUV)
 {
     GzIndirectLight indirect;
     
     // Calculate average environment luminance once for all fallback decisions
     half avgEnvLuminance = GzGetAverageEnvironmentLuminance();
     
-    // Get ambient diffuse with fallback (SH or fallback cubemap)
-    indirect.diffuse = GzGetAmbientWithFallback(normal, avgEnvLuminance);
+    // Sample lightmaps first (priority over SH)
+    // NOTE: For DLM, we only use the ambient/indirect portion here
+    // The directional lighting will be handled separately with full PBR shading
+    half3 lightmapDiffuse = half3(0, 0, 0);
     
-    // Get reflection with fallback
+    #ifdef LIGHTMAP_ON
+        half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV.xy);
+        half3 bakedColor = DecodeLightmap(bakedColorTex);
+        
+        #ifdef DIRLIGHTMAP_COMBINED
+            half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV.xy);
+            lightmapDiffuse += DecodeDirectionalLightmap(bakedColor, bakedDirTex, normal);
+        #else
+            lightmapDiffuse += bakedColor;
+        #endif
+    #endif
+    
+    #ifdef DYNAMICLIGHTMAP_ON
+        lightmapDiffuse += GzSampleDynamicLightmap(lightmapUV.zw, normal);
+    #endif
+    
+    // Use lightmaps if available, otherwise fall back to SH
+    #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
+        indirect.diffuse = lightmapDiffuse;
+    #else
+        // Get ambient diffuse with fallback (SH or fallback cubemap)
+        indirect.diffuse = GzGetAmbientWithFallback(normal, avgEnvLuminance);
+    #endif
+    
+    // Get reflection with fallback (specular remains the same regardless of lightmaps)
     half3 reflectionDir = reflect(-viewDir, normal);
     indirect.specular = GzGetIndirectSpecular(reflectionDir, roughness, worldPos, avgEnvLuminance);
     

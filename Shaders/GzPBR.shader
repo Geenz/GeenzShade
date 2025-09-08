@@ -177,6 +177,9 @@ Shader "GeenzShade/GzPBR"
             #pragma multi_compile_instancing
             #pragma multi_compile __ UNITY_SPECCUBE_BLENDING
             #pragma multi_compile __ UNITY_SPECCUBE_BOX_PROJECTION
+            #pragma multi_compile __ LIGHTMAP_ON
+            #pragma multi_compile __ DIRLIGHTMAP_COMBINED
+            #pragma multi_compile __ DYNAMICLIGHTMAP_ON
             
             // Shader features
             #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
@@ -222,6 +225,9 @@ Shader "GeenzShade/GzPBR"
             
             half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
             {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                
                 // Calculate view direction for proper iridescence evaluation
                 half3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
                 
@@ -238,7 +244,7 @@ Shader "GeenzShade/GzPBR"
                 half avgEnvLuminance = GzGetAverageEnvironmentLuminance();
                 GzIndirectLight indirect = GzGatherIndirectLight(i.worldPos, matData.normal, 
                                                                  viewDir, 
-                                                                 matData.roughness, matData.occlusion);
+                                                                 matData.roughness, matData.occlusion, i.lmap);
                 
                 // Add Light Volumes ambient contribution
                 #ifdef USE_VRC_LIGHT_VOLUMES
@@ -259,8 +265,19 @@ Shader "GeenzShade/GzPBR"
                     finalColor += directLight * dirLightCtx.lightColor * dirLightCtx.lightAtten;
                 }
                 
-                // SH dominant light
-                #ifdef _SHDOMINANTLIGHT_ON
+                // DLM dominant light (reconstructed from lightmap directional data)
+                #if defined(LIGHTMAP_ON) && defined(DIRLIGHTMAP_COMBINED)
+                    GzLightingContext dlmCtx = GzCreateLightmapDominantLightContext(i.worldPos, i.lmap.xy);
+                    if (dlmCtx.lightAtten > 0)
+                    {
+                        GzPopulateLightingVectors(dlmCtx, matData.normal);
+                        half3 dlmLight = GzEvaluateLayerStack(matData, dlmCtx);
+                        finalColor += dlmLight * dlmCtx.lightColor * dlmCtx.lightAtten;
+                    }
+                #endif
+                
+                // SH dominant light (only when lightmaps are not available)
+                #if defined(_SHDOMINANTLIGHT_ON) && !defined(LIGHTMAP_ON)
                     GzLightingContext shCtx = GzCreateSHDominantLightContext(i.worldPos, matData.normal);
                     if (shCtx.lightAtten > 0)
                     {
@@ -371,6 +388,9 @@ Shader "GeenzShade/GzPBR"
             
             half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
             {
+                UNITY_SETUP_INSTANCE_ID(i);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                
                 // Calculate view direction for proper iridescence evaluation
                 half3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
                 
