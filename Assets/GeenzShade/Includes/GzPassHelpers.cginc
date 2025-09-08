@@ -22,6 +22,13 @@ struct GzVertexInput
     float3 normal : NORMAL;
     float4 tangent : TANGENT;
     float2 uv : TEXCOORD0;
+    #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
+        float2 lightmapUV : TEXCOORD1;     // Static lightmap UVs
+    #endif
+    #ifdef DYNAMICLIGHTMAP_ON
+        float2 dynamicLightmapUV : TEXCOORD2; // Dynamic lightmap UVs
+    #endif
+    UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
 struct GzVertexOutput
@@ -43,6 +50,12 @@ struct GzVertexOutput
     #ifdef VERTEXLIGHT_ON
         half3 vertexLightColor : TEXCOORD8;
     #endif
+    
+    // Lightmap UVs (xy = static lightmap, zw = dynamic lightmap)
+    float4 lmap : TEXCOORD9;
+    
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 // ForwardAdd specific output (more compact)
@@ -60,6 +73,9 @@ struct GzVertexOutputAdd
     LIGHTING_COORDS(5, 6)
     float4 screenPos : TEXCOORD7;
     UNITY_FOG_COORDS(8)
+    
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 // ============================================
@@ -71,6 +87,9 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
 {
     GzVertexOutput o;
     UNITY_INITIALIZE_OUTPUT(GzVertexOutput, o);
+    UNITY_SETUP_INSTANCE_ID(v);
+    UNITY_TRANSFER_INSTANCE_ID(v, o);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     
     o.pos = UnityObjectToClipPos(v.vertex);
     o.uv = v.uv; // Transform will be applied based on which texture is being sampled
@@ -86,6 +105,18 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
     o.tspace0 = half3(wTangent.x, wBitangent.x, wNormal.x);
     o.tspace1 = half3(wTangent.y, wBitangent.y, wNormal.y);
     o.tspace2 = half3(wTangent.z, wBitangent.z, wNormal.z);
+    
+    // Lightmap UVs
+    #ifdef DYNAMICLIGHTMAP_ON
+        o.lmap.zw = v.dynamicLightmapUV * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
+    #else
+        o.lmap.zw = 0;
+    #endif
+    #ifdef LIGHTMAP_ON
+        o.lmap.xy = v.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;
+    #else
+        o.lmap.xy = 0;
+    #endif
     
     // Compute vertex lights
     #if defined(VERTEXLIGHT_ON) && defined(_VERTEXLIGHTS_ON)
@@ -113,6 +144,9 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
 {
     GzVertexOutputAdd o;
     UNITY_INITIALIZE_OUTPUT(GzVertexOutputAdd, o);
+    UNITY_SETUP_INSTANCE_ID(v);
+    UNITY_TRANSFER_INSTANCE_ID(v, o);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     
     o.pos = UnityObjectToClipPos(v.vertex);
     o.uv = v.uv;
