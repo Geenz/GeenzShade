@@ -95,7 +95,7 @@ half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFil
 
     // First interface
     half R0 = GzIorToFresnel0(iridescenceIor, outsideIOR);
-    half R12 = GzFresnelSchlick(R0, 1.0, cosTheta1);
+    half R12 = GzFresnelSchlick(R0, 1.0, cosTheta1, 0.0);
     half R21 = R12;
     half T121 = 1.0 - R12;
     half phi12 = 0.0;
@@ -105,7 +105,7 @@ half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFil
     // Second interface
     half3 baseIOR = GzFresnel0ToIor(clamp(baseF0, 0.0, 0.9999)); // guard against 1.0
     half3 R1 = GzIorToFresnel0(baseIOR, iridescenceIor);
-    half3 R23 = GzFresnelSchlick(R1, half3(1.0, 1.0, 1.0), cosTheta2);
+    half3 R23 = GzFresnelSchlick(R1, half3(1.0, 1.0, 1.0), cosTheta2, 0.0);
     half3 phi23 = half3(0.0, 0.0, 0.0);
     if (baseIOR.r < iridescenceIor) phi23.r = UNITY_PI;
     if (baseIOR.g < iridescenceIor) phi23.g = UNITY_PI;

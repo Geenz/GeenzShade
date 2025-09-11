@@ -36,6 +36,7 @@ struct GzLightingContext
     half NoH;
     half VoH;
     half LoV;
+    half LoH;
     
     // Backface lighting (for transmission if implemented)
     half NoL_back;
@@ -73,6 +74,7 @@ GzLightingContext GzCreateLightingContext()
     ctx.NoH = 0;
     ctx.VoH = 0;
     ctx.LoV = 0;
+    ctx.LoH = 0;
     ctx.NoL_back = 0;
     
     #ifdef USE_CLEARCOAT
@@ -94,6 +96,7 @@ void GzPopulateLightingVectors(inout GzLightingContext ctx, half3 normal)
     ctx.NoH = saturate(dot(normal, ctx.halfVec));
     ctx.VoH = saturate(dot(ctx.viewDir, ctx.halfVec));
     ctx.LoV = dot(ctx.lightDir, ctx.viewDir);
+    ctx.LoH = saturate(dot(ctx.lightDir, ctx.halfVec));
     ctx.NoL_back = saturate(dot(-normal, ctx.lightDir));
     
     // Clearcoat values default to base values (will be overridden if clearcoat normal differs)

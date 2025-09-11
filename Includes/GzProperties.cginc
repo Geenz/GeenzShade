@@ -7,6 +7,7 @@
 
 #ifndef GZ_PROPERTIES_INCLUDED
 #define GZ_PROPERTIES_INCLUDED
+#include "UnityStandardCore.cginc" // Includes a bunch of standard Unity properties.
 
 // Single source of truth for all shader properties
 // Shared between ForwardBase and ForwardAdd passes
@@ -40,10 +41,7 @@ float4 _SheenTexture_ST;
 // ============================================
 
 // Base Properties
-float4 _Color;
-half _Metallic;
 half _Roughness;
-half _OcclusionStrength;
 half _NormalScale;
 half3 _EmissiveFactor;
 half _EmissionStrength;
@@ -63,6 +61,7 @@ half _ClearcoatNormalScale;
 
 // Sheen
 float4 _SheenColor;
+half _SheenFactor;
 half _SheenRoughness;
 half _SheenRimBoost;  // Artistic rim enhancement (1 = glTF compliant, <1 = reduced, >1 = enhanced backscatter)
 

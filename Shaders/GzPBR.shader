@@ -97,6 +97,7 @@ Shader "GeenzShade/GzPBR"
         [Header(Sheen)]
         [Toggle(USE_SHEEN)] _UseSheen ("Use Sheen", Float) = 0
         _SheenColor ("Sheen Color Factor", Color) = (0,0,0,1)
+        _SheenFactor ("Sheen Factor", Range(0,1)) = 0.0
         _SheenRoughness ("Sheen Roughness Factor", Range(0,1)) = 0.0
         _SheenRimBoost ("Sheen Rim Boost (Artistic)", Range(0,10)) = 1.0
         
@@ -175,11 +176,6 @@ Shader "GeenzShade/GzPBR"
             #pragma multi_compile_fwdbase
             #pragma multi_compile_fog
             #pragma multi_compile_instancing
-            #pragma multi_compile __ UNITY_SPECCUBE_BLENDING
-            #pragma multi_compile __ UNITY_SPECCUBE_BOX_PROJECTION
-            #pragma multi_compile __ LIGHTMAP_ON
-            #pragma multi_compile __ DIRLIGHTMAP_COMBINED
-            #pragma multi_compile __ DYNAMICLIGHTMAP_ON
             
             // Shader features
             #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
@@ -240,11 +236,14 @@ Shader "GeenzShade/GzPBR"
                     clip(matData.alpha - _AlphaCutoff);
                 #endif
                 
-                // Gather indirect lighting
+                // Create direct lighting context FIRST to get attenuation
+                GzLightingContext dirLightCtx = GzCreateDirectionalLightContext(i, matData.normal);
+                
+                // Gather indirect lighting (using attenuation from direct light context)
                 half avgEnvLuminance = GzGetAverageEnvironmentLuminance();
                 GzIndirectLight indirect = GzGatherIndirectLight(i.worldPos, matData.normal, 
                                                                  viewDir, 
-                                                                 matData.roughness, matData.occlusion, i.lmap);
+                                                                 matData.roughness, matData.occlusion, i.ambientOrLightmapUV, dirLightCtx.lightAtten);
                 
                 // Add Light Volumes ambient contribution
                 #ifdef USE_VRC_LIGHT_VOLUMES
@@ -257,32 +256,33 @@ Shader "GeenzShade/GzPBR"
                 emission = GzAttenuateEmissionByClearcoat(emission, matData, viewDir);
                 half3 finalColor = emission;
                 
-                // Main directional light
-                GzLightingContext dirLightCtx = GzCreateDirectionalLightContext(i, matData.normal);
+                // Main directional light (already created above)
                 if (dirLightCtx.lightAtten > 0)
                 {
                     half3 directLight = GzEvaluateLayerStack(matData, dirLightCtx);
-                    finalColor += directLight * dirLightCtx.lightColor * dirLightCtx.lightAtten;
+                    finalColor += directLight * dirLightCtx.lightColor;
                 }
                 
                 // DLM dominant light (reconstructed from lightmap directional data)
+                // Only for objects that actually have lightmaps
                 #if defined(LIGHTMAP_ON) && defined(DIRLIGHTMAP_COMBINED)
-                    GzLightingContext dlmCtx = GzCreateLightmapDominantLightContext(i.worldPos, i.lmap.xy);
-                    if (dlmCtx.lightAtten > 0)
-                    {
-                        GzPopulateLightingVectors(dlmCtx, matData.normal);
-                        half3 dlmLight = GzEvaluateLayerStack(matData, dlmCtx);
-                        finalColor += dlmLight * dlmCtx.lightColor * dlmCtx.lightAtten;
-                    }
+                    // Check if this object has valid lightmap UVs
+                    GzLightingContext dlmCtx = GzCreateLightmapDominantLightContext(i.worldPos, i.ambientOrLightmapUV.xy);
+                        if (dlmCtx.lightAtten > 0)
+                        {
+                            GzPopulateLightingVectors(dlmCtx, matData.normal);
+                            half3 dlmLight = GzEvaluateLayerStack(matData, dlmCtx);
+                            finalColor += dlmLight * dlmCtx.lightColor;
+                        }
                 #endif
                 
-                // SH dominant light (only when lightmaps are not available)
+                // SH dominant light (only for dynamic objects without lightmaps)
                 #if defined(_SHDOMINANTLIGHT_ON) && !defined(LIGHTMAP_ON)
                     GzLightingContext shCtx = GzCreateSHDominantLightContext(i.worldPos, matData.normal);
                     if (shCtx.lightAtten > 0)
                     {
                         half3 shLight = GzEvaluateLayerStack(matData, shCtx);
-                        finalColor += shLight * shCtx.lightColor * shCtx.lightAtten;
+                        finalColor += shLight * shCtx.lightColor;
                     }
                 #endif
                 
@@ -317,7 +317,7 @@ Shader "GeenzShade/GzPBR"
                     if (lvCtx.lightAtten > 0)
                     {
                         half3 lvLight = GzEvaluateLayerStack(matData, lvCtx);
-                        finalColor += lvLight * lvCtx.lightColor * lvCtx.lightAtten;
+                        finalColor += lvLight * lvCtx.lightColor;
                     }
                 #endif
                 
@@ -410,7 +410,7 @@ Shader "GeenzShade/GzPBR"
                 if (ctx.lightAtten > 0)
                 {
                     half3 lightResult = GzEvaluateLayerStack(matData, ctx);
-                    color = lightResult * ctx.lightColor * ctx.lightAtten;
+                    color = lightResult * ctx.lightColor;
                 }
                 
                 // Apply fog
@@ -475,6 +475,123 @@ Shader "GeenzShade/GzPBR"
                 #endif
                 
                 SHADOW_CASTER_FRAGMENT(i)
+            }
+            ENDCG
+        }
+        
+        Pass
+        {
+            Name "Meta"
+            Tags { "LightMode"="Meta" }
+            
+            Cull Off
+            
+            CGPROGRAM
+            #pragma vertex vert_meta
+            #pragma fragment frag_meta
+            
+            #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
+            #pragma shader_feature_local USE_ORM_TEXTURE
+            #pragma shader_feature_local USE_EMISSIVE_TEXTURE
+            #pragma shader_feature EDITOR_VISUALIZATION
+            
+            #include "UnityCG.cginc"
+            #include "UnityMetaPass.cginc"
+            #include "UnityStandardUtils.cginc"
+            #include "../Includes/GzProperties.cginc"
+            #include "../Includes/GzPassHelpers.cginc"
+            
+            struct v2f_meta
+            {
+                float4 pos      : SV_POSITION;
+                float4 uv       : TEXCOORD0;
+                #ifdef EDITOR_VISUALIZATION
+                    float2 vizUV        : TEXCOORD1;
+                    float4 lightCoord   : TEXCOORD2;
+                #endif
+            };
+            
+            // Lightmapping albedo calculation - accounts for rough metals
+            half3 GzLightmappingAlbedo(half3 diffuse, half3 specular, half roughness)
+            {
+                // Rough metals (which have black diffuse) still scatter light
+                // Add some of the specular color based on roughness
+                half3 res = diffuse;
+                res += specular * roughness * 0.5;
+                return res;
+            }
+            
+            v2f_meta vert_meta(GzVertexInput v)
+            {
+                v2f_meta o;
+                o.pos = UnityMetaVertexPosition(v.vertex, v.uv1, v.uv2, unity_LightmapST, unity_DynamicLightmapST);
+                
+                // Use same UV transformation as main shader
+                o.uv.xy = GzTransformUV(v.uv, _BaseColorTexture_ST);
+                o.uv.zw = 0;
+                
+                #ifdef EDITOR_VISUALIZATION
+                    o.vizUV = 0;
+                    o.lightCoord = 0;
+                    if (unity_VisualizationMode == EDITORVIZ_TEXTURE)
+                        o.vizUV = UnityMetaVizUV(unity_EditorViz_UVIndex, v.uv, v.uv1, v.uv2, unity_EditorViz_Texture_ST);
+                    else if (unity_VisualizationMode == EDITORVIZ_SHOWLIGHTMASK)
+                    {
+                        o.vizUV = v.uv1 * unity_LightmapST.xy + unity_LightmapST.zw;
+                        o.lightCoord = mul(unity_EditorViz_WorldToLight, mul(unity_ObjectToWorld, float4(v.vertex.xyz, 1)));
+                    }
+                #endif
+                
+                return o;
+            }
+            
+            float4 frag_meta(v2f_meta i) : SV_Target
+            {
+                // Sample base color
+                half3 albedo = _Color.rgb;
+                #ifdef USE_BASE_COLOR_TEXTURE
+                    albedo *= tex2D(_BaseColorTexture, i.uv.xy).rgb;
+                #endif
+                
+                // Sample metallic and roughness from ORM texture
+                half metallic = _Metallic;
+                half roughness = _Roughness;
+                
+                #ifdef USE_ORM_TEXTURE
+                    half3 orm = tex2D(_ORMTexture, i.uv.xy).rgb;
+                    roughness = orm.g * _Roughness;  // G = Roughness  
+                    metallic = orm.b * _Metallic;    // B = Metallic
+                #endif
+                
+                // Calculate diffuse and specular from metallic workflow
+                // Using Unity's standard functions for consistency with lightmapper
+                half3 specColor;
+                half oneMinusReflectivity;
+                half3 diffColor = DiffuseAndSpecularFromMetallic(albedo, metallic, specColor, oneMinusReflectivity);
+                
+                // Sample emission
+                half3 emission = _EmissiveFactor.rgb * _EmissionStrength;
+                #ifdef USE_EMISSIVE_TEXTURE
+                    emission *= tex2D(_EmissiveTexture, i.uv.xy).rgb;
+                #endif
+                
+                // Setup meta input
+                UnityMetaInput metaInput;
+                UNITY_INITIALIZE_OUTPUT(UnityMetaInput, metaInput);
+                
+                #ifdef EDITOR_VISUALIZATION
+                    metaInput.Albedo = diffColor;
+                    metaInput.VizUV = i.vizUV;
+                    metaInput.LightCoord = i.lightCoord;
+                #else
+                    // For lightmapping, include rough metal contribution
+                    metaInput.Albedo = GzLightmappingAlbedo(diffColor, specColor, roughness);
+                #endif
+                
+                metaInput.SpecularColor = specColor;
+                metaInput.Emission = emission;
+                
+                return UnityMetaFragment(metaInput);
             }
             ENDCG
         }

@@ -22,12 +22,8 @@ struct GzVertexInput
     float3 normal : NORMAL;
     float4 tangent : TANGENT;
     float2 uv : TEXCOORD0;
-    #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
-        float2 lightmapUV : TEXCOORD1;     // Static lightmap UVs
-    #endif
-    #ifdef DYNAMICLIGHTMAP_ON
-        float2 dynamicLightmapUV : TEXCOORD2; // Dynamic lightmap UVs
-    #endif
+    float2 uv1 : TEXCOORD1;     // Always include UV1 for lightmaps (matches Unity Standard)
+    float2 uv2 : TEXCOORD2;     // Always include UV2 for dynamic lightmaps
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
@@ -35,24 +31,14 @@ struct GzVertexOutput
 {
     float4 pos : SV_POSITION;
     float2 uv : TEXCOORD0;
-    float3 worldPos : TEXCOORD1;
+    float4 eyeVec : TEXCOORD1;             // eyeVec.xyz | fogCoord
     
-    // TBN matrix stored as 3 vectors
-    half3 tspace0 : TEXCOORD2; // tangent.x, bitangent.x, normal.x
-    half3 tspace1 : TEXCOORD3; // tangent.y, bitangent.y, normal.y
-    half3 tspace2 : TEXCOORD4; // tangent.z, bitangent.z, normal.z
-    
-    // Lighting and shadows
-    UNITY_FOG_COORDS(5)
-    SHADOW_COORDS(6)
-    float4 screenPos : TEXCOORD7;
-    
-    #ifdef VERTEXLIGHT_ON
-        half3 vertexLightColor : TEXCOORD8;
-    #endif
-    
-    // Lightmap UVs (xy = static lightmap, zw = dynamic lightmap)
-    float4 lmap : TEXCOORD9;
+    // TBN matrix stored as rows (consistent with ForwardAdd)
+    float4 tangentToWorld[3] : TEXCOORD2;  // [3x3:tangentToWorld | 1x3:unused/packed data]
+    half4 ambientOrLightmapUV : TEXCOORD5; // SH ambient or Lightmap UVs
+    UNITY_LIGHTING_COORDS(6,7)
+    float4 screenPos : TEXCOORD8;          // Screen position for depth fade
+    float3 worldPos : TEXCOORD9;           // World position
     
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
@@ -63,16 +49,13 @@ struct GzVertexOutputAdd
 {
     float4 pos : SV_POSITION;
     float2 uv : TEXCOORD0;
-    float3 worldPos : TEXCOORD1;
+    float4 eyeVec : TEXCOORD1;             // eyeVec.xyz | fogCoord
     
-    // TBN matrix
-    half3 tspace0 : TEXCOORD2;
-    half3 tspace1 : TEXCOORD3;
-    half3 tspace2 : TEXCOORD4;
-    
-    LIGHTING_COORDS(5, 6)
-    float4 screenPos : TEXCOORD7;
-    UNITY_FOG_COORDS(8)
+    // TBN matrix + light direction in W component (exactly like Unity)
+    float4 tangentToWorldAndLightDir[3] : TEXCOORD2;    // [3x3:tangentToWorld | 1x3:lightDir] - mirrors Unity Standard.
+    float3 worldPos : TEXCOORD5;
+    UNITY_LIGHTING_COORDS(6, 7)
+    float4 screenPos : TEXCOORD8;          // Screen position for depth fade
     
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
@@ -91,9 +74,11 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
     UNITY_TRANSFER_INSTANCE_ID(v, o);
     UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     
+    float4 posWorld = mul(unity_ObjectToWorld, v.vertex);
     o.pos = UnityObjectToClipPos(v.vertex);
     o.uv = v.uv; // Transform will be applied based on which texture is being sampled
-    o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+    o.worldPos = posWorld.xyz;
+    o.eyeVec.xyz = normalize(posWorld.xyz - _WorldSpaceCameraPos);
     
     // Build TBN matrix
     half3 wNormal = UnityObjectToWorldNormal(v.normal);
@@ -101,40 +86,39 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
     half tangentSign = v.tangent.w * unity_WorldTransformParams.w;
     half3 wBitangent = cross(wNormal, wTangent) * tangentSign;
     
-    // Store TBN in tspace vectors
-    o.tspace0 = half3(wTangent.x, wBitangent.x, wNormal.x);
-    o.tspace1 = half3(wTangent.y, wBitangent.y, wNormal.y);
-    o.tspace2 = half3(wTangent.z, wBitangent.z, wNormal.z);
+    // Store TBN matrix rows (consistent with ForwardAdd)
+    o.tangentToWorld[0] = float4(wTangent, 0);
+    o.tangentToWorld[1] = float4(wBitangent, 0);
+    o.tangentToWorld[2] = float4(wNormal, 0);
     
-    // Lightmap UVs
-    #ifdef DYNAMICLIGHTMAP_ON
-        o.lmap.zw = v.dynamicLightmapUV * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
-    #else
-        o.lmap.zw = 0;
-    #endif
+    // Ambient or lightmap UVs
+    o.ambientOrLightmapUV = 0;
     #ifdef LIGHTMAP_ON
-        o.lmap.xy = v.lightmapUV * unity_LightmapST.xy + unity_LightmapST.zw;
-    #else
-        o.lmap.xy = 0;
+        o.ambientOrLightmapUV.xy = v.uv1 * unity_LightmapST.xy + unity_LightmapST.zw;
+    #elif UNITY_SHOULD_SAMPLE_SH
+        #ifdef VERTEXLIGHT_ON
+            // Approximated illumination from non-important point lights (keep vertex lights!)
+            o.ambientOrLightmapUV.rgb = Shade4PointLights(
+                unity_4LightPosX0, unity_4LightPosY0, unity_4LightPosZ0,
+                unity_LightColor[0].rgb, unity_LightColor[1].rgb, 
+                unity_LightColor[2].rgb, unity_LightColor[3].rgb,
+                unity_4LightAtten0, o.worldPos, wNormal
+            );
+        #endif
+        // NO SH HERE - we compute SH per-pixel in fragment shader
+    #endif
+    #ifdef DYNAMICLIGHTMAP_ON
+        o.ambientOrLightmapUV.zw = v.uv2 * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
     #endif
     
-    // Compute vertex lights
-    #if defined(VERTEXLIGHT_ON) && defined(_VERTEXLIGHTS_ON)
-        o.vertexLightColor = Shade4PointLights(
-            unity_4LightPosX0, unity_4LightPosY0, unity_4LightPosZ0,
-            unity_LightColor[0].rgb, unity_LightColor[1].rgb, 
-            unity_LightColor[2].rgb, unity_LightColor[3].rgb,
-            unity_4LightAtten0, o.worldPos, wNormal
-        );
-    #endif
-    
-    // Transfer shadow and fog coords
-    TRANSFER_SHADOW(o);
-    UNITY_TRANSFER_FOG(o, o.pos);
+    // We need this for shadow receiving (exactly like Unity Standard)
+    UNITY_TRANSFER_LIGHTING(o, v.uv1);
     
     // Screen position for depth fade (with proper W component for depth)
     o.screenPos = ComputeScreenPos(o.pos);
     COMPUTE_EYEDEPTH(o.screenPos.w);
+    
+    UNITY_TRANSFER_FOG_COMBINED_WITH_EYE_VEC(o, o.pos);
     
     return o;
 }
@@ -148,9 +132,11 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
     UNITY_TRANSFER_INSTANCE_ID(v, o);
     UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     
+    float4 posWorld = mul(unity_ObjectToWorld, v.vertex);
     o.pos = UnityObjectToClipPos(v.vertex);
     o.uv = v.uv;
-    o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+    o.worldPos = posWorld.xyz;
+    o.eyeVec.xyz = normalize(posWorld.xyz - _WorldSpaceCameraPos);
     
     // Build TBN matrix
     half3 wNormal = UnityObjectToWorldNormal(v.normal);
@@ -158,20 +144,26 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
     half tangentSign = v.tangent.w * unity_WorldTransformParams.w;
     half3 wBitangent = cross(wNormal, wTangent) * tangentSign;
     
-    // Store TBN in tspace vectors
-    o.tspace0 = half3(wTangent.x, wBitangent.x, wNormal.x);
-    o.tspace1 = half3(wTangent.y, wBitangent.y, wNormal.y);
-    o.tspace2 = half3(wTangent.z, wBitangent.z, wNormal.z);
+    // Calculate light direction (exactly like Unity Standard shader)
+    float3 lightDir = _WorldSpaceLightPos0.xyz - o.worldPos * _WorldSpaceLightPos0.w;
+    #ifndef USING_DIRECTIONAL_LIGHT
+        lightDir = normalize(lightDir);
+    #endif
     
-    // Transfer lighting coords
-    TRANSFER_VERTEX_TO_FRAGMENT(o);
+    // Store TBN matrix rows like Unity (tangentToWorld[0/1/2])
+    o.tangentToWorldAndLightDir[0] = float4(wTangent, lightDir.x);
+    o.tangentToWorldAndLightDir[1] = float4(wBitangent, lightDir.y);
+    o.tangentToWorldAndLightDir[2] = float4(wNormal, lightDir.z);
+    
+    // We need this for shadow receiving and lighting (exactly like Unity Standard)
+    UNITY_TRANSFER_LIGHTING(o, v.uv1);
     
     // Screen position for depth fade (with proper W component for depth)
     o.screenPos = ComputeScreenPos(o.pos);
     COMPUTE_EYEDEPTH(o.screenPos.w);
     
-    // Fog coordinates
-    UNITY_TRANSFER_FOG(o, o.pos);
+    // Fog coordinates combined with eye vector
+    UNITY_TRANSFER_FOG_COMBINED_WITH_EYE_VEC(o, o.pos);
     
     return o;
 }
@@ -184,9 +176,9 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
 half3x3 GzGetTBN(GzVertexOutput i)
 {
     return half3x3(
-        half3(i.tspace0.x, i.tspace1.x, i.tspace2.x), // tangent
-        half3(i.tspace0.y, i.tspace1.y, i.tspace2.y), // bitangent
-        half3(i.tspace0.z, i.tspace1.z, i.tspace2.z)  // normal
+        i.tangentToWorld[0].xyz, // tangent (row 0)
+        i.tangentToWorld[1].xyz, // bitangent (row 1)
+        i.tangentToWorld[2].xyz  // normal (row 2)
     );
 }
 
@@ -194,22 +186,22 @@ half3x3 GzGetTBN(GzVertexOutput i)
 half3x3 GzGetTBNAdd(GzVertexOutputAdd i)
 {
     return half3x3(
-        half3(i.tspace0.x, i.tspace1.x, i.tspace2.x), // tangent
-        half3(i.tspace0.y, i.tspace1.y, i.tspace2.y), // bitangent
-        half3(i.tspace0.z, i.tspace1.z, i.tspace2.z)  // normal
+        i.tangentToWorldAndLightDir[0].xyz, // tangent (row 0)
+        i.tangentToWorldAndLightDir[1].xyz, // bitangent (row 1)
+        i.tangentToWorldAndLightDir[2].xyz  // normal (row 2)
     );
 }
 
 // Get world normal from vertex output (no normal map)
 half3 GzGetWorldNormal(GzVertexOutput i)
 {
-    return normalize(half3(i.tspace0.z, i.tspace1.z, i.tspace2.z));
+    return normalize(i.tangentToWorld[2].xyz);
 }
 
 // Get world normal from ForwardAdd output
 half3 GzGetWorldNormalAdd(GzVertexOutputAdd i)
 {
-    return normalize(half3(i.tspace0.z, i.tspace1.z, i.tspace2.z));
+    return normalize(i.tangentToWorldAndLightDir[2].xyz);
 }
 
 // Sample normal map and transform to world space
