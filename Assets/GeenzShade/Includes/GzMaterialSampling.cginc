@@ -46,16 +46,9 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
 {
     GzMaterialData matData = GzCreateMaterialData();
     
-    // Transform UVs for each texture
-    float2 uvBaseColor = GzTransformUV(baseUV, _BaseColorTexture_ST);
-    float2 uvORM = GzTransformUV(baseUV, _ORMTexture_ST);
-    float2 uvEmissive = GzTransformUV(baseUV, _EmissiveTexture_ST);
-    float2 uvSpecular = GzTransformUV(baseUV, _SpecularTexture_ST);
-    float2 uvClearcoatIrid = GzTransformUV(baseUV, _ClearcoatIridescenceTexture_ST);
-    float2 uvSheen = GzTransformUV(baseUV, _SheenTexture_ST);
-    
     // Base color
     #ifdef USE_BASE_COLOR_TEXTURE
+        float2 uvBaseColor = GzTransformUV(baseUV, _BaseColorTexture_ST);
         half4 baseColorSample = tex2D(_BaseColorTexture, uvBaseColor);
         matData.baseColor = baseColorSample.rgb * _Color.rgb;
         matData.alpha = baseColorSample.a * _Color.a;
@@ -66,6 +59,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     
     // ORM (Occlusion, Roughness, Metallic)
     #ifdef USE_ORM_TEXTURE
+        float2 uvORM = GzTransformUV(baseUV, _ORMTexture_ST);
         half3 orm = tex2D(_ORMTexture, uvORM).rgb;
         matData.occlusion = lerp(1.0, orm.r, _OcclusionStrength);  // R = Occlusion
         matData.roughness = orm.g * _Roughness;                    // G = Roughness
@@ -78,6 +72,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     
     // Emissive
     #ifdef USE_EMISSIVE_TEXTURE
+        float2 uvEmissive = GzTransformUV(baseUV, _EmissiveTexture_ST);
         matData.emissive = tex2D(_EmissiveTexture, uvEmissive).rgb * _EmissiveFactor.rgb;
     #else
         matData.emissive = _EmissiveFactor.rgb;
@@ -87,6 +82,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     // Specular extension
     #ifdef USE_SPECULAR_EXTENSION
         #ifdef USE_SPECULAR_TEXTURE
+            float2 uvSpecular = GzTransformUV(baseUV, _SpecularTexture_ST);
             half4 specularSample = tex2D(_SpecularTexture, uvSpecular);
             matData.specularColor = specularSample.rgb * _SpecularColor.rgb;
             matData.specularFactor = specularSample.a * _SpecularFactor;
@@ -101,6 +97,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     
     // Clearcoat and Iridescence
     #ifdef USE_CLEARCOAT_IRIDESCENCE_TEXTURE
+        float2 uvClearcoatIrid = GzTransformUV(baseUV, _ClearcoatIridescenceTexture_ST);
         half4 clearcoatIridescence = tex2D(_ClearcoatIridescenceTexture, uvClearcoatIrid);
         #ifdef USE_CLEARCOAT
             matData.clearcoatFactor = clearcoatIridescence.r * _ClearcoatFactor;
@@ -127,11 +124,14 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     // Sheen
     #ifdef USE_SHEEN
         #ifdef USE_SHEEN_TEXTURE
+            float2 uvSheen = GzTransformUV(baseUV, _SheenTexture_ST);
             half4 sheenSample = tex2D(_SheenTexture, uvSheen);
             matData.sheenColor = sheenSample.rgb * _SheenColor.rgb;
+            matData.sheenFactor = _SheenFactor;  // Could be extended to use alpha channel if needed
             matData.sheenRoughness = sheenSample.a * _SheenRoughness;
         #else
             matData.sheenColor = _SheenColor.rgb;
+            matData.sheenFactor = _SheenFactor;
             matData.sheenRoughness = _SheenRoughness;
         #endif
         matData.sheenRimBoost = _SheenRimBoost;  // Artistic parameter (1 = spec compliant)
@@ -139,9 +139,8 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     
     // Diffuse Transmission
     #ifdef USE_DIFFUSE_TRANSMISSION
-        float2 uvDiffTrans = GzTransformUV(baseUV, _DiffuseTransmissionTexture_ST);
-        
         #ifdef USE_DIFFUSE_TRANSMISSION_TEXTURE
+            float2 uvDiffTrans = GzTransformUV(baseUV, _DiffuseTransmissionTexture_ST);
             // Sample combined texture: RGB = color, A = factor
             half4 transmissionSample = tex2D(_DiffuseTransmissionTexture, uvDiffTrans);
             matData.diffuseTransmissionFactor = transmissionSample.a * _DiffuseTransmissionFactor;
@@ -244,12 +243,9 @@ half3 GzUnpackNormalWithScale(half4 packednormal, half scale)
 // Sample normals and apply to material data
 void GzApplyNormalMaps(inout GzMaterialData matData, float2 baseUV, half3x3 tbn)
 {
-    // Transform UVs for normal textures
-    float2 uvNormal = GzTransformUV(baseUV, _NormalTexture_ST);
-    float2 uvClearcoatNormal = GzTransformUV(baseUV, _ClearcoatNormalTexture_ST);
-    
     // Base normal
     #ifdef USE_NORMAL_TEXTURE
+        float2 uvNormal = GzTransformUV(baseUV, _NormalTexture_ST);
         half4 normalSample = tex2D(_NormalTexture, uvNormal);
         half3 normalTS = GzUnpackNormalWithScale(normalSample, _NormalScale);
         matData.normal = normalize(mul(normalTS, tbn));
@@ -260,11 +256,13 @@ void GzApplyNormalMaps(inout GzMaterialData matData, float2 baseUV, half3x3 tbn)
     // Clearcoat normal
     #ifdef USE_CLEARCOAT
         #ifdef USE_CLEARCOAT_NORMAL_TEXTURE
+            float2 uvClearcoatNormal = GzTransformUV(baseUV, _ClearcoatNormalTexture_ST);
             half4 clearcoatNormalSample = tex2D(_ClearcoatNormalTexture, uvClearcoatNormal);
             half3 clearcoatNormalTS = GzUnpackNormalWithScale(clearcoatNormalSample, _ClearcoatNormalScale);
             matData.clearcoatNormal = normalize(mul(clearcoatNormalTS, tbn));
         #else
-            matData.clearcoatNormal = matData.normal;
+            // Use geometric normal for clearcoat (smooth coating layer)
+            matData.clearcoatNormal = normalize(tbn[2]);
         #endif
     #else
         matData.clearcoatNormal = matData.normal;

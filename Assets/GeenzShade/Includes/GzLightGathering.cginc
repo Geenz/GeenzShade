@@ -11,6 +11,7 @@
 #include "UnityCG.cginc"
 #include "UnityLightingCommon.cginc"
 #include "UnityStandardUtils.cginc"
+#include "UnityStandardCore.cginc"
 #include "UnityImageBasedLighting.cginc"
 #include "AutoLight.cginc"
 #include "GzLighting.cginc"
@@ -30,14 +31,10 @@
 // Get shadow attenuation for ForwardBase
 half GzGetShadowAttenuationBase(GzVertexOutput i)
 {
-    return SHADOW_ATTENUATION(i);
-}
-
-// Get light attenuation for ForwardAdd
-half GzGetLightAttenuationAdd(GzVertexOutputAdd i, float3 worldPos)
-{
-    UNITY_LIGHT_ATTENUATION(atten, i, worldPos);
-    return atten;
+    return 1;
+    // Use Unity's UnityComputeForwardShadows function directly, same as Standard shader
+    // Pass lightmap UVs from _ShadowCoord.xy for mixed lighting with shadow masks
+    return UnityComputeForwardShadows(i._ShadowCoord.xy, i.worldPos, 0);
 }
 
 // ============================================
@@ -60,35 +57,40 @@ GzLightmapData GzSampleLightmapComplete(float2 lightmapUV);
 // Light Context Creation
 // ============================================
 
-// Create lighting context for main light in ForwardBase (can be directional, point, or spot)
+// Create lighting context for main light in ForwardBase (directional light)
 GzLightingContext GzCreateDirectionalLightContext(GzVertexOutput i, half3 normal)
 {
     GzLightingContext ctx = GzCreateLightingContext();
     
-    // Check if light exists
-    if (any(_LightColor0.rgb))
-    {
-        // Determine light type from w component:
-        // w = 0: directional light (xyz is direction)
-        // w = 1: point/spot light (xyz is position)
-        if (_WorldSpaceLightPos0.w == 0)
-        {
-            // Directional light - xyz is the light direction
-            ctx.lightDir = normalize(_WorldSpaceLightPos0.xyz);
-        }
-        else
-        {
-            // Point or spot light - calculate direction from position
-            ctx.lightDir = normalize(_WorldSpaceLightPos0.xyz - i.worldPos);
-        }
-        
-        ctx.viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
-        ctx.lightColor = _LightColor0.rgb;
-        ctx.lightAtten = GzGetShadowAttenuationBase(i) * _LightIntensityMultiplier;
-        
-        // Populate vectors
-        GzPopulateLightingVectors(ctx, normal);
-    }
+    // Get attenuation (shadows for directional light)
+    UNITY_LIGHT_ATTENUATION(atten, i, i.worldPos);
+    
+    // Handle shadowmask blending if needed
+    #if defined(HANDLE_SHADOWS_BLENDING_IN_GI)
+        half bakedAtten = UnitySampleBakedOcclusion(i.ambientOrLightmapUV.xy, i.worldPos);
+        float zDist = dot(_WorldSpaceCameraPos - i.worldPos, UNITY_MATRIX_V[2].xyz);
+        float fadeDist = UnityComputeShadowFadeDistance(i.worldPos, zDist);
+        atten = UnityMixRealtimeAndBakedShadows(atten, bakedAtten, UnityComputeShadowFade(fadeDist));
+    #endif
+    
+    // Check if we should zero out direct light (subtractive mode)
+    #if defined(LIGHTMAP_ON) && defined(LIGHTMAP_SHADOW_MIXING) && !defined(SHADOWS_SHADOWMASK) && defined(SHADOWS_SCREEN)
+        // In subtractive mode, direct light is handled through lightmap modification
+        ctx.lightColor = half3(0, 0, 0);
+        ctx.lightDir = half3(0, 1, 0);
+        ctx.lightAtten = 0;
+    #else
+        // Normal direct lighting
+        UnityLight mainLight = MainLight();
+        ctx.lightColor = mainLight.color * atten * _LightIntensityMultiplier;
+        ctx.lightDir = mainLight.dir;
+        ctx.lightAtten = atten;
+    #endif
+    
+    ctx.viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
+    
+    // Populate lighting vectors
+    GzPopulateLightingVectors(ctx, normal);
     
     return ctx;
 }
@@ -179,18 +181,21 @@ GzLightingContext GzCreateAdditiveLightContext(GzVertexOutputAdd i, half3 normal
 {
     GzLightingContext ctx = GzCreateLightingContext();
     
-    // Determine light type and direction
-    #ifndef USING_DIRECTIONAL_LIGHT
-        ctx.lightDir = normalize(_WorldSpaceLightPos0.xyz - i.worldPos);
-    #else
-        ctx.lightDir = _WorldSpaceLightPos0.xyz;
-    #endif
+    // Get light direction from vertex shader (IN_LIGHTDIR_FWDADD macro)
+    half3 lightDir = half3(i.tangentToWorldAndLightDir[0].w, i.tangentToWorldAndLightDir[1].w, i.tangentToWorldAndLightDir[2].w);
     
+    // Get combined distance and shadow attenuation
+    UNITY_LIGHT_ATTENUATION(atten, i, i.worldPos);
+    
+    // Use Unity's AdditiveLight function
+    UnityLight addLight = AdditiveLight(lightDir, atten);
+    
+    ctx.lightColor = addLight.color * _LightIntensityMultiplier;
+    ctx.lightDir = addLight.dir;
+    ctx.lightAtten = atten;
     ctx.viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
-    ctx.lightColor = _LightColor0.rgb;
-    ctx.lightAtten = GzGetLightAttenuationAdd(i, i.worldPos) * _LightIntensityMultiplier;
     
-    // Populate vectors
+    // Populate lighting vectors
     GzPopulateLightingVectors(ctx, normal);
     
     return ctx;
@@ -203,9 +208,10 @@ GzLightingContext GzCreateAdditiveLightContext(GzVertexOutputAdd i, half3 normal
 // Get vertex light contribution
 half3 GzGetVertexLights(GzVertexOutput i, half3 albedo, half metallic)
 {
-    #if defined(VERTEXLIGHT_ON) && defined(_VERTEXLIGHTS_ON)
+    #if defined(VERTEXLIGHT_ON) && defined(_VERTEXLIGHTS_ON) && !defined(LIGHTMAP_ON)
+        // Only use vertex lights when NOT using lightmaps
         half3 diffuse = albedo * (1.0 - metallic);
-        return i.vertexLightColor * diffuse;
+        return i.ambientOrLightmapUV.rgb * diffuse;
     #else
         return half3(0, 0, 0);
     #endif
@@ -232,7 +238,7 @@ half GzGetAverageEnvironmentLuminance()
 // Lightmap Sampling
 // ============================================
 
-// Sample static lightmap and extract lighting data
+// Sample static lightmap and extract lighting data (following Unity's approach)
 GzLightmapData GzSampleLightmapComplete(float2 lightmapUV)
 {
     GzLightmapData lmData;
@@ -244,13 +250,25 @@ GzLightmapData GzSampleLightmapComplete(float2 lightmapUV)
     #ifdef LIGHTMAP_ON
         half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV);
         half3 bakedColor = DecodeLightmap(bakedColorTex);
+        lmData.diffuseColor = bakedColor;
         
         #ifdef DIRLIGHTMAP_COMBINED
             half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV);
             
-            lmData.dominantLightDir = normalize(bakedDirTex.xyz * 2.0 - 1.0);
-            lmData.dominantLightColor = bakedColor;
-            lmData.lightAtten = bakedDirTex.a;
+            // Unity's directional lightmap encoding: direction in RGB as [0,1] range
+            // Remap to [-0.5, 0.5] (NOT normalized - length is directionality)
+            half3 lightDir = bakedDirTex.xyz - 0.5;
+            
+            // The w component is the rebalancing coefficient
+            // Length of lightDir is the "directionality" 
+            lmData.dominantLightDir = normalize(lightDir);
+            lmData.lightAtten = length(lightDir); // directionality factor
+            
+            // Apply rebalancing like Unity does
+            lmData.dominantLightColor = bakedColor / max(1e-4h, bakedDirTex.w);
+        #else
+            // Non-directional lightmap - just diffuse
+            lmData.diffuseColor = bakedColor;
         #endif
     #endif
     
@@ -304,49 +322,33 @@ half3 GzGetAmbientWithFallback(half3 normal, half avgEnvLuminance)
     return sh;
 }
 
-// Get reflection probe sample using Unity Standard shader method with box projection
-half3 GzSampleReflectionProbe(half3 reflectionDir, half roughness, float3 worldPos)
-{
-    // Create glossy environment data like Unity Standard shader
-    Unity_GlossyEnvironmentData glossIn;
-    glossIn.roughness = roughness; // This is perceptualRoughness
-    
-    #ifdef UNITY_SPECCUBE_BOX_PROJECTION
-        // Store original for second probe
-        half3 originalReflUVW = reflectionDir;
-        // Apply box projection for first probe
-        glossIn.reflUVW = BoxProjectedCubemapDirection(reflectionDir, worldPos, unity_SpecCube0_ProbePosition, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
-    #else
-        glossIn.reflUVW = reflectionDir;
-    #endif
-    
-    // Use Unity's built-in function which handles roughness remapping internally
-    half3 env0 = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE(unity_SpecCube0), unity_SpecCube0_HDR, glossIn);
-    
-    #if UNITY_SPECCUBE_BLENDING
-        const float kBlendFactor = 0.99999;
-        float blendLerp = unity_SpecCube0_BoxMin.w;
-        if (blendLerp < kBlendFactor)
-        {
-            #ifdef UNITY_SPECCUBE_BOX_PROJECTION
-                // Apply box projection for second probe
-                glossIn.reflUVW = BoxProjectedCubemapDirection(originalReflUVW, worldPos, unity_SpecCube1_ProbePosition, unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax);
-            #endif
-            
-            half3 env1 = Unity_GlossyEnvironment(UNITY_PASS_TEXCUBE_SAMPLER(unity_SpecCube1, unity_SpecCube0), unity_SpecCube1_HDR, glossIn);
-            env0 = lerp(env1, env0, blendLerp);
-        }
-    #endif
-    
-    return env0;
-}
 
 // Sample environment for any reflection vector (used by clearcoat, etc)
-half3 GzSampleEnvironment(half3 reflectionDir, half roughness, float3 worldPos)
+half3 GzSampleEnvironment(half3 reflectionDir, half roughness, float3 worldPos, half occlusion = 1.0)
 {
     #ifdef USE_ENVIRONMENT_REFLECTION
-        // Try reflection probes first
-        half3 envColor = GzSampleReflectionProbe(reflectionDir, roughness, worldPos);
+        // Set up Unity's GI input data
+        UnityGIInput d;
+        d.worldPos = worldPos;
+        d.probeHDR[0] = unity_SpecCube0_HDR;
+        d.probeHDR[1] = unity_SpecCube1_HDR;
+        #if defined(UNITY_SPECCUBE_BLENDING) || defined(UNITY_SPECCUBE_BOX_PROJECTION)
+          d.boxMin[0] = unity_SpecCube0_BoxMin;
+        #endif
+        #ifdef UNITY_SPECCUBE_BOX_PROJECTION
+          d.boxMax[0] = unity_SpecCube0_BoxMax;
+          d.probePosition[0] = unity_SpecCube0_ProbePosition;
+          d.boxMax[1] = unity_SpecCube1_BoxMax;
+          d.boxMin[1] = unity_SpecCube1_BoxMin;
+          d.probePosition[1] = unity_SpecCube1_ProbePosition;
+        #endif
+        
+        Unity_GlossyEnvironmentData g;
+        g.roughness = roughness;
+        g.reflUVW = reflectionDir;
+        
+        // Use Unity's indirect specular function (we'll apply our own occlusion)
+        half3 envColor = UnityGI_IndirectSpecular(d, 1.0, g);
         
         // Check if probe is below threshold
         half probeLuminance = dot(envColor, half3(0.299, 0.587, 0.114));
@@ -380,11 +382,31 @@ half3 GzParallaxCorrectReflection(half3 reflectionDir, float3 worldPos)
 
 // Get indirect specular with environment-aware fallback
 half3 GzGetIndirectSpecular(half3 reflectionDir, half roughness, float3 worldPos,
-                            half avgEnvLuminance)
+                            half avgEnvLuminance, half occlusion)
 {
     #ifdef USE_ENVIRONMENT_REFLECTION
-        // Sample reflection probe with box projection handled internally
-        half3 envSample = GzSampleReflectionProbe(reflectionDir, roughness, worldPos);
+        // Set up Unity's GI input data
+        UnityGIInput d;
+        d.worldPos = worldPos;
+        d.probeHDR[0] = unity_SpecCube0_HDR;
+        d.probeHDR[1] = unity_SpecCube1_HDR;
+        #if defined(UNITY_SPECCUBE_BLENDING) || defined(UNITY_SPECCUBE_BOX_PROJECTION)
+          d.boxMin[0] = unity_SpecCube0_BoxMin;
+        #endif
+        #ifdef UNITY_SPECCUBE_BOX_PROJECTION
+          d.boxMax[0] = unity_SpecCube0_BoxMax;
+          d.probePosition[0] = unity_SpecCube0_ProbePosition;
+          d.boxMax[1] = unity_SpecCube1_BoxMax;
+          d.boxMin[1] = unity_SpecCube1_BoxMin;
+          d.probePosition[1] = unity_SpecCube1_ProbePosition;
+        #endif
+        
+        Unity_GlossyEnvironmentData g;
+        g.roughness = roughness;
+        g.reflUVW = reflectionDir;
+        
+        // Use Unity's indirect specular function (we'll apply our own occlusion)
+        half3 envSample = UnityGI_IndirectSpecular(d, 1.0, g);
         
         // Use the cached average environment luminance for consistent fallback decisions
         if (avgEnvLuminance < _ReflectionProbeThreshold)
@@ -455,56 +477,80 @@ half3 GzGetLightVolumeAmbient(float3 worldPos, half3 normal)
 }
 #endif
 
-// Gather all indirect lighting for ForwardBase
+// Gather all indirect lighting for ForwardBase (following Unity's approach)
 GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewDir, 
-                                      half roughness, half occlusion, float4 lightmapUV)
+                                      half roughness, half occlusion, float4 lightmapUV, half mainLightAtten)
 {
     GzIndirectLight indirect;
+    indirect.diffuse = half3(0, 0, 0);
+    indirect.specular = half3(0, 0, 0);
     
     // Calculate average environment luminance once for all fallback decisions
     half avgEnvLuminance = GzGetAverageEnvironmentLuminance();
     
-    // Sample lightmaps first (priority over SH)
-    // NOTE: For DLM, we only use the ambient/indirect portion here
-    // The directional lighting will be handled separately with full PBR shading
-    half3 lightmapDiffuse = half3(0, 0, 0);
-    
-    #ifdef LIGHTMAP_ON
-        half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV.xy);
-        half3 bakedColor = DecodeLightmap(bakedColorTex);
+    // Handle lightmaps like Unity does
+    #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
+        // Object has lightmaps - no SH
         
-        #ifdef DIRLIGHTMAP_COMBINED
-            half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV.xy);
-            lightmapDiffuse += DecodeDirectionalLightmap(bakedColor, bakedDirTex, normal);
-        #else
-            lightmapDiffuse += bakedColor;
+        #ifdef LIGHTMAP_ON
+            half4 bakedColorTex = UNITY_SAMPLE_TEX2D(unity_Lightmap, lightmapUV.xy);
+            half3 bakedColor = DecodeLightmap(bakedColorTex);
+            
+            #ifdef DIRLIGHTMAP_COMBINED
+                half4 bakedDirTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_LightmapInd, unity_Lightmap, lightmapUV.xy);
+                indirect.diffuse += DecodeDirectionalLightmap(bakedColor, bakedDirTex, normal);
+                
+                // Handle subtractive mixed lighting
+                #if defined(LIGHTMAP_SHADOW_MIXING) && !defined(SHADOWS_SHADOWMASK) && defined(SHADOWS_SCREEN)
+                    // Subtract main light with realtime attenuation from lightmap
+                    indirect.diffuse = SubtractMainLightWithRealtimeAttenuationFromLightmap(indirect.diffuse, mainLightAtten, bakedColorTex, normal);
+                #endif
+            #else
+                indirect.diffuse += bakedColor;
+                
+                // Handle subtractive mixed lighting  
+                #if defined(LIGHTMAP_SHADOW_MIXING) && !defined(SHADOWS_SHADOWMASK) && defined(SHADOWS_SCREEN)
+                    indirect.diffuse = SubtractMainLightWithRealtimeAttenuationFromLightmap(indirect.diffuse, mainLightAtten, bakedColorTex, normal);
+                #endif
+            #endif
+        #endif
+        
+        #ifdef DYNAMICLIGHTMAP_ON
+            indirect.diffuse += GzSampleDynamicLightmap(lightmapUV.zw, normal);
+        #endif
+    #elif UNITY_SHOULD_SAMPLE_SH
+        // Dynamic object - compute SH per-pixel
+        indirect.diffuse = ShadeSH9(half4(normal, 1.0));
+        
+        // Add vertex lights if present
+        #ifdef VERTEXLIGHT_ON
+            indirect.diffuse += lightmapUV.rgb; // Vertex lights were computed in vertex shader
         #endif
     #endif
     
-    #ifdef DYNAMICLIGHTMAP_ON
-        lightmapDiffuse += GzSampleDynamicLightmap(lightmapUV.zw, normal);
-    #endif
+    // Apply occlusion to indirect diffuse
+    indirect.diffuse *= occlusion;
     
-    // Use lightmaps if available, otherwise fall back to SH
-    #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
-        indirect.diffuse = lightmapDiffuse;
-    #else
-        // Get ambient diffuse with fallback (SH or fallback cubemap)
-        indirect.diffuse = GzGetAmbientWithFallback(normal, avgEnvLuminance);
-    #endif
-    
-    // Get reflection with fallback (specular remains the same regardless of lightmaps)
+    // Get reflection with fallback
     half3 reflectionDir = reflect(-viewDir, normal);
-    indirect.specular = GzGetIndirectSpecular(reflectionDir, roughness, worldPos, avgEnvLuminance);
+    indirect.specular = GzGetIndirectSpecular(reflectionDir, roughness, worldPos, avgEnvLuminance, occlusion);
     
     // Apply horizon occlusion to specular
     half horizon = GzHorizonOcclusion(normal, reflectionDir);
     indirect.specular *= horizon;
     
-    // Apply specular occlusion
+    // Apply specular occlusion (glTF/Filament formula)
     half NoV = saturate(dot(normal, viewDir));
     half specOcc = GzComputeSpecularOcclusion(NoV, occlusion, roughness);
     indirect.specular *= specOcc;
+    
+    // Scale indirect specular by lightmap color on lightmapped surfaces
+    // This is an aesthetic choice to better integrate reflections with baked lighting
+    #ifdef LIGHTMAP_ON
+        // Directly multiply by lightmap color for artistic integration
+        // This breaks PBR rules but looks better in practice
+        indirect.specular *= bakedColor;
+    #endif
     
     return indirect;
 }

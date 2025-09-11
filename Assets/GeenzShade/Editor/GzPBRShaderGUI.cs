@@ -603,10 +603,16 @@ namespace GeenzShade
                         materialEditor.ColorProperty(sheenColorProp, "Sheen Color");
                     }
                     
+                    var sheenFactorProp = FindProperty("_SheenFactor", properties);
+                    if (sheenFactorProp != null)
+                    {
+                        sheenFactorProp.floatValue = EditorGUILayout.Slider("Sheen Factor", sheenFactorProp.floatValue, 0f, 1f);
+                    }
+                    
                     var sheenRoughnessProp = FindProperty("_SheenRoughness", properties);
                     if (sheenRoughnessProp != null)
                     {
-                        sheenRoughnessProp.floatValue = EditorGUILayout.Slider("Sheen Roughness", sheenRoughnessProp.floatValue, 0f, 1f);
+                        sheenRoughnessProp.floatValue = EditorGUILayout.Slider("Sheen Roughness", sheenRoughnessProp.floatValue, 0.0001f, 1f);
                     }
                     
                     var sheenRimBoostProp = FindProperty("_SheenRimBoost", properties);

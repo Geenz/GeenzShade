@@ -146,6 +146,7 @@ Material:
     - _Roughness: 0.3
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
+    - _SheenFactor: 0
     - _SheenRimBoost: 1
     - _SheenRoughness: 0
     - _SmoothnessTextureChannel: 0

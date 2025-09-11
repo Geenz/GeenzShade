@@ -12,9 +12,8 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
-  - USE_CLEARCOAT
   - USE_ENVIRONMENT_REFLECTION
-  - USE_SPECULAR_EXTENSION
+  - USE_SHEEN
   - VERTEXLIGHT_ON
   - _RENDERMODE_OPAQUE
   - _SHDOMINANTLIGHT_ON
@@ -147,8 +146,9 @@ Material:
     - _Roughness: 1
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
+    - _SheenFactor: 1
     - _SheenRimBoost: 1
-    - _SheenRoughness: 0
+    - _SheenRoughness: 0.588
     - _SmoothnessTextureChannel: 0
     - _SpecularAACameraDistanceFalloff: 20
     - _SpecularAAEdgeFalloff: 0.5
@@ -158,7 +158,7 @@ Material:
     - _SrcBlend: 1
     - _UVSec: 0
     - _UseBaseColorTexture: 1
-    - _UseClearcoat: 1
+    - _UseClearcoat: 0
     - _UseClearcoatIridescenceTexture: 0
     - _UseClearcoatNormalTexture: 0
     - _UseDiffuseTransmission: 0
@@ -169,10 +169,10 @@ Material:
     - _UseMROTexture: 1
     - _UseNormalTexture: 0
     - _UseORMTexture: 1
-    - _UseSheen: 0
+    - _UseSheen: 1
     - _UseSheenTexture: 0
     - _UseSpecularAntialiasing: 0
-    - _UseSpecularExtension: 1
+    - _UseSpecularExtension: 0
     - _UseSpecularTexture: 0
     - _UseVRCLightVolumes: 0
     - _VertexLights: 1
@@ -183,6 +183,6 @@ Material:
     - _DiffuseTransmissionColorFactor: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _EmissiveFactor: {r: 0, g: 0, b: 0, a: 1}
-    - _SheenColor: {r: 0, g: 0, b: 0, a: 1}
+    - _SheenColor: {r: 1, g: 0, b: 0, a: 1}
     - _SpecularColor: {r: 1, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

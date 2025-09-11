@@ -9,6 +9,12 @@
 #define GZ_MATH_INCLUDED
 
 // ============================================
+// Constants
+// ============================================
+
+#define GZ_EPSILON 0.0001
+
+// ============================================
 // Common Math Operations
 // ============================================
 
@@ -97,25 +103,25 @@ half GzLuminance(half3 color)
 // Safe division (avoids divide by zero) - useful for shader safety
 half GzSafeDiv(half a, half b)
 {
-    return a / max(b, 1e-5);
+    return a / max(b, GZ_EPSILON);
 }
 
 half3 GzSafeDiv(half3 a, half3 b)
 {
-    return a / max(b, 1e-5);
+    return a / max(b, GZ_EPSILON);
 }
 
 // Safe normalize (handles zero-length vectors) - useful for shader safety
 half3 GzSafeNormalize(half3 v)
 {
     half len = length(v);
-    return len > 1e-5 ? v / len : half3(0, 0, 1);
+    return len > GZ_EPSILON ? v / len : half3(0, 0, 1);
 }
 
 // Reciprocal with safety
 half GzRcp(half x)
 {
-    return 1.0 / max(x, 1e-5);
+    return 1.0 / max(x, GZ_EPSILON);
 }
 
 // ============================================

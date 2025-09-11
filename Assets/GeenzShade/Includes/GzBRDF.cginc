@@ -20,17 +20,24 @@
 // Core BRDF Components
 // ============================================
 
-// Fresnel Schlick approximation
-half3 GzFresnelSchlick(half3 f0, half3 f90, half cosTheta)
+// Roughness-dependent Fresnel (based on Fdez-Agüera)
+// This is a simplified version without BRDF LUT
+half3 GzFresnelSchlick(half3 f0, half3 f90, half cosTheta, half roughness)
 {
-    return f0 + (f90 - f0) * GzPow5(saturate(1.0 - cosTheta));
+    // Roughness-dependent Fresnel range
+    // On rough surfaces, we interpolate F90 toward F0 to reduce the Fresnel effect
+    half3 roughF90 = max(half3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), f0);
+    return f0 + (roughF90 - f0) * GzPow5(saturate(1.0 - cosTheta));
 }
 
-// Fresnel Schlick approximation (scalar overload)
-half GzFresnelSchlick(half f0, half f90, half cosTheta)
+// Roughness-dependent Fresnel (scalar overload)
+half GzFresnelSchlick(half f0, half f90, half cosTheta, half roughness)
 {
-    return f0 + (f90 - f0) * GzPow5(saturate(1.0 - cosTheta));
+    // Roughness-dependent Fresnel range
+    half roughF90 = max(1.0 - roughness, f0);
+    return f0 + (roughF90 - f0) * GzPow5(saturate(1.0 - cosTheta));
 }
+
 
 // GGX/Trowbridge-Reitz normal distribution
 half GzDistributionGGX(half NoH, half roughness)
@@ -47,10 +54,15 @@ half GzDistributionGGX(half NoH, half roughness)
 // Smith G visibility function (optimized)
 half GzVisibilitySmithGGX(half NoL, half NoV, half roughness)
 {
+    // Clamp to prevent numerical issues at grazing angles with normal maps
+    // This is a common technique used in Filament and other renderers
+    NoL = max(NoL, GZ_EPSILON);
+    NoV = max(NoV, GZ_EPSILON);
+    
     half a = roughness * roughness;
     half GGXV = NoL * sqrt(NoV * NoV * (1.0 - a) + a);
     half GGXL = NoV * sqrt(NoL * NoL * (1.0 - a) + a);
-    return 0.5 / max(GGXV + GGXL, 0.00001);
+    return 0.5 / max(GGXV + GGXL, GZ_EPSILON);
 }
 
 #endif // GZ_BRDF_INCLUDED

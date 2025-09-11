@@ -46,14 +46,15 @@ half3 GzCalculateSpecular(GzMaterialData matData, GzLightingContext ctx, half3 F
     return F * D * V;
 }
 
-// Calculate complete base material BRDF
-half3 GzCalculateBaseBRDF(GzMaterialData matData, GzLightingContext ctx, half3 F0, half3 F90)
+// Calculate base material components separately for proper sheen layering
+void GzCalculateBaseBRDFComponents(GzMaterialData matData, GzLightingContext ctx, half3 F0, half3 F90,
+                                   out half3 diffuse, out half3 specular)
 {
-    // Calculate Fresnel
-    half3 F = GzFresnelSchlick(F0, F90, ctx.VoH);
+    // Calculate Fresnel using roughness-dependent version
+    half3 F = GzFresnelSchlick(F0, F90, ctx.VoH, matData.roughness);
     
     // Calculate specular
-    half3 specular = GzCalculateSpecular(matData, ctx, F);
+    specular = GzCalculateSpecular(matData, ctx, F);
     
     // Calculate diffuse with energy conservation
     half3 kS = F;  // Specular contribution
@@ -61,8 +62,14 @@ half3 GzCalculateBaseBRDF(GzMaterialData matData, GzLightingContext ctx, half3 F
     
     // Calculate diffuse component (BRDF or BTDF based on hemisphere)
     // Per glTF spec: mix(diffuse_brdf, diffuse_btdf, diffuseTransmission)
-    half3 diffuse = kD * GzCalculateDiffuseWithTransmission(matData, ctx);
-    
+    diffuse = kD * GzCalculateDiffuseWithTransmission(matData, ctx);
+}
+
+// Calculate complete base material BRDF
+half3 GzCalculateBaseBRDF(GzMaterialData matData, GzLightingContext ctx, half3 F0, half3 F90)
+{
+    half3 diffuse, specular;
+    GzCalculateBaseBRDFComponents(matData, ctx, F0, F90, diffuse, specular);
     return diffuse + specular;
 }
 
@@ -82,18 +89,8 @@ half3 GzCalculateIridescence(GzMaterialData matData, GzLightingContext ctx, half
 // ============================================
 // Sheen Layer Calculations (functions moved to GzSheen.cginc)
 // ============================================
-
-// Apply sheen layer to base BRDF
-half3 GzApplySheenLayer(half3 baseBRDF, GzMaterialData matData, GzLightingContext ctx)
-{
-    #ifdef USE_SHEEN
-        half3 sheenBRDF = GzCalculateSheen(matData, ctx);
-        half albedoScaling = GzCalculateSheenAlbedoScaling(matData, ctx);
-        return baseBRDF * albedoScaling + sheenBRDF;
-    #else
-        return baseBRDF;
-    #endif
-}
+// Note: Sheen is now properly applied by scaling base color before diffuse calculation,
+// not by scaling the final BRDF. See GzEvaluateLayerStack for the correct implementation.
 
 // ============================================
 // Clearcoat Layer Calculations
@@ -104,31 +101,31 @@ half3 GzApplySheenLayer(half3 baseBRDF, GzMaterialData matData, GzLightingContex
 // Note: NoL is NOT included in the BRDF, it's applied during layering
 half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
 {
-    #ifdef USE_CLEARCOAT
-        if (matData.clearcoatFactor > 0)
-        {
-            // Fixed F0 for clearcoat (IOR = 1.5, F0 = ((1-1.5)/(1+1.5))^2 = 0.04)
-            half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
-            half3 clearcoatF90 = half3(1, 1, 1);
-            
-            // Use pre-computed clearcoat dot products from context
-            // Fresnel for clearcoat BRDF
-            half3 F = GzFresnelSchlick(clearcoatF0, clearcoatF90, ctx.ccVoH);
-            
-            // Clamp clearcoat roughness and square it for alpha
-            // Per spec: α = clearcoatRoughness^2
-            half roughness = max(matData.clearcoatRoughness, 0.01);
-            
-            // GGX Distribution with clearcoat normal
-            half D = GzDistributionGGX(ctx.ccNoH, roughness);
-            
-            // Smith Visibility with clearcoat normal
-            half V = GzVisibilitySmithGGX(ctx.ccNoL, ctx.ccNoV, roughness);
-            
-            // Return BRDF without NoL (NoL is applied during layering)
-            return F * D * V;
-        }
-    #endif
+#ifdef USE_CLEARCOAT
+    if (matData.clearcoatFactor > 0)
+    {
+        // Fixed F0 for clearcoat (IOR = 1.5, F0 = ((1-1.5)/(1+1.5))^2 = 0.04)
+        half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
+        half3 clearcoatF90 = half3(1, 1, 1);
+        
+        // Use pre-computed clearcoat dot products from context
+        // Fresnel for clearcoat BRDF using roughness-dependent version
+        half3 F = GzFresnelSchlick(clearcoatF0, clearcoatF90, ctx.ccVoH, matData.clearcoatRoughness);
+        
+        // Clamp clearcoat roughness and square it for alpha
+        // Per spec: α = clearcoatRoughness^2
+        half roughness = max(matData.clearcoatRoughness, 0.01);
+        
+        // GGX Distribution with clearcoat normal
+        half D = GzDistributionGGX(ctx.ccNoH, roughness);
+        
+        // Smith Visibility with clearcoat normal
+        half V = GzVisibilitySmithGGX(ctx.ccNoL, ctx.ccNoV, roughness);
+        
+        // Return BRDF without NoL (NoL is applied during layering)
+        return F * D * V;
+    }
+#endif
     
     return half3(0, 0, 0);
 }
@@ -136,15 +133,16 @@ half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
 // Calculate clearcoat Fresnel for layer mixing (uses clearcoat normal)
 half3 GzCalculateClearcoatFresnel(GzMaterialData matData, half3 viewDir)
 {
-    #ifdef USE_CLEARCOAT
-        if (matData.clearcoatFactor > 0)
-        {
-            // Use clearcoat normal for fresnel calculation
-            half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
-            half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
-            return GzFresnelSchlick(clearcoatF0, half3(1, 1, 1), ccNoV) * matData.clearcoatFactor;
-        }
-    #endif
+#ifdef USE_CLEARCOAT
+    if (matData.clearcoatFactor > 0)
+    {
+        // Use clearcoat normal for fresnel calculation
+        half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
+        half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
+        half3 clearcoatF90 = half3(1, 1, 1);
+        return GzFresnelSchlick(clearcoatF0, clearcoatF90, ccNoV, matData.clearcoatRoughness) * matData.clearcoatFactor;
+    }
+#endif
     
     return half3(0, 0, 0);
 }
@@ -153,18 +151,18 @@ half3 GzCalculateClearcoatFresnel(GzMaterialData matData, half3 viewDir)
 // Per spec: coated_emission = emission * (1 - clearcoat * clearcoat_fresnel)
 half3 GzAttenuateEmissionByClearcoat(half3 emission, GzMaterialData matData, half3 viewDir)
 {
-    #ifdef USE_CLEARCOAT
-        if (matData.clearcoatFactor > 0)
-        {
-            // Calculate clearcoat Fresnel
-            half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
-            half clearcoatFresnel = 0.04 + (1.0 - 0.04) * GzPow5(1.0 - ccNoV);
-            
-            // Apply attenuation: emission * (1 - clearcoat * clearcoat_fresnel)
-            half attenuation = 1.0 - (matData.clearcoatFactor * clearcoatFresnel);
-            return emission * attenuation;
-        }
-    #endif
+#ifdef USE_CLEARCOAT
+    if (matData.clearcoatFactor > 0)
+    {
+        // Calculate clearcoat Fresnel
+        half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
+        half clearcoatFresnel = 0.04 + (1.0 - 0.04) * GzPow5(1.0 - ccNoV);
+        
+        // Apply attenuation: emission * (1 - clearcoat * clearcoat_fresnel)
+        half attenuation = 1.0 - (matData.clearcoatFactor * clearcoatFresnel);
+        return emission * attenuation;
+    }
+#endif
     
     return emission;
 }
@@ -172,15 +170,15 @@ half3 GzAttenuateEmissionByClearcoat(half3 emission, GzMaterialData matData, hal
 // Apply clearcoat layer on top of base
 half3 GzApplyClearcoatLayer(half3 baseBRDF, GzMaterialData matData, GzLightingContext ctx)
 {
-    #ifdef USE_CLEARCOAT
-        half3 clearcoatBRDF = GzCalculateClearcoat(matData, ctx);
-        half3 clearcoatFresnel = GzCalculateClearcoatFresnel(matData, ctx.NoV);
-        
-        // Layer mixing: base * (1 - clearcoatFresnel) + clearcoat
-        return baseBRDF * (1.0 - clearcoatFresnel) + clearcoatBRDF;
-    #else
-        return baseBRDF;
-    #endif
+#ifdef USE_CLEARCOAT
+    half3 clearcoatBRDF = GzCalculateClearcoat(matData, ctx);
+    half3 clearcoatFresnel = GzCalculateClearcoatFresnel(matData, ctx.NoV);
+    
+    // Layer mixing: base * (1 - clearcoatFresnel) + clearcoat
+    return baseBRDF * (1.0 - clearcoatFresnel) + clearcoatBRDF;
+#else
+    return baseBRDF;
+#endif
 }
 
 // ============================================
@@ -188,43 +186,24 @@ half3 GzApplyClearcoatLayer(half3 baseBRDF, GzMaterialData matData, GzLightingCo
 // ============================================
 
 // Calculate diffuse BSDF with transmission
-// Per glTF spec: mix(diffuse_brdf, diffuse_btdf, diffuseTransmission)
-// Returns the diffuse BSDF without NoL multiplication (that's applied in the caller)
+// Following Khronos reference implementation - returns diffuse without NoL
 half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingContext ctx)
 {
     half3 diffuseAlbedo = GzGetAlbedo(matData.baseColor, matData.metallic);
     
-    // Per glTF spec:
-    // diffuse_brdf returns (1/π) * baseColor when view and light on same hemisphere, 0 otherwise
-    // diffuse_btdf returns (1/π) * diffuseTransmissionColor when on opposite hemispheres, 0 otherwise
-    // Final result: mix(diffuse_brdf, diffuse_btdf, diffuseTransmission)
+    // Regular diffuse BRDF (uses regular NoL, applied later)
+    half3 f_diffuse = diffuseAlbedo * UNITY_INV_PI;
     
-    half3 diffuseBRDF = half3(0, 0, 0);
-    half3 diffuseBTDF = half3(0, 0, 0);
+#ifdef USE_DIFFUSE_TRANSMISSION
+    // Transmission diffuse BTDF (uses abs(NoL), but NoL applied later)
+    // Per Khronos: diffuseTransmissionColorFactor modulates the diffuse
+    half3 f_diffuse_transmission = matData.diffuseTransmissionColorFactor * diffuseAlbedo * UNITY_INV_PI;
     
-    // Calculate BRDF contribution (same hemisphere)
-    if (ctx.NoL > 0)
-    {
-        diffuseBRDF = diffuseAlbedo * UNITY_INV_PI;
-    }
+    // Mix regular diffuse with transmission diffuse
+    f_diffuse = lerp(f_diffuse, f_diffuse_transmission, matData.diffuseTransmissionFactor);
+#endif
     
-    // Calculate BTDF contribution (opposite hemisphere)
-    #ifdef USE_DIFFUSE_TRANSMISSION
-    if (ctx.NoL < 0)
-    {
-        // Per spec: diffuseTransmissionColor = baseColor * diffuseTransmissionColorFactor
-        half3 diffuseTransmissionColor = diffuseAlbedo * matData.diffuseTransmissionColorFactor;
-        diffuseBTDF = diffuseTransmissionColor * UNITY_INV_PI;
-    }
-    
-    // Mix BRDF and BTDF according to transmission factor
-    // glTF spec: mix(diffuse_brdf, diffuse_btdf, diffuseTransmission)
-    // This is: (1 - diffuseTransmission) * diffuse_brdf + diffuseTransmission * diffuse_btdf
-    return (1.0 - matData.diffuseTransmissionFactor) * diffuseBRDF + matData.diffuseTransmissionFactor * diffuseBTDF;
-    #else
-    // No transmission - just return BRDF
-    return diffuseBRDF;
-    #endif
+    return f_diffuse;
 }
 
 // ============================================
@@ -234,60 +213,55 @@ half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingConte
 // Evaluate all layers in correct order for direct lighting
 half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
 {
-    // Populate clearcoat vectors if clearcoat normal differs from base
-    #ifdef USE_CLEARCOAT
-    if (matData.clearcoatFactor > 0 && any(matData.clearcoatNormal != matData.normal))
-    {
-        GzPopulateClearcoatVectors(ctx, matData.clearcoatNormal);
-    }
-    #endif
+    // Populate clearcoat vectors (always needed for clearcoat layer)
+#ifdef USE_CLEARCOAT
+    GzPopulateClearcoatVectors(ctx, matData.clearcoatNormal);
+#endif
     
     // Use pre-calculated F0 from material data (already includes iridescence)
     // This is calculated once in GzSampleMaterialComplete
     half3 F0 = matData.f0;
     half3 F90 = matData.f90;
     
-    // Calculate base BRDF with pre-calculated F0 (WITHOUT NoL multiplication)
-    // This already includes diffuse transmission per glTF spec
-    half3 baseBRDF = GzCalculateBaseBRDF(matData, ctx, F0, F90);
+    // Step 3: Apply sheen albedo scaling to base color if needed
+    half3 scaledBaseColor = matData.baseColor;
+#ifdef USE_SHEEN
+    if (GzMax3(matData.sheenColor) > 0)
+    {
+        half albedoScaling = GzCalculateSheenAlbedoScaling(matData, ctx);
+        // Scale the base color for diffuse calculation
+        scaledBaseColor = matData.baseColor * albedoScaling;
+    }
+#endif
     
-    // Step 3: Apply sheen layer (if present) and NoL
-    #ifdef USE_SHEEN
+    // Calculate base BRDF with potentially scaled base color
+    // We need to temporarily modify the material data
+    half3 originalBaseColor = matData.baseColor;
+    matData.baseColor = scaledBaseColor;
+    half3 baseBRDF = GzCalculateBaseBRDF(matData, ctx, F0, F90);
+    matData.baseColor = originalBaseColor; // Restore original
+    
+    // Step 4: Add sheen layer on top
+#ifdef USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0 && ctx.NoL > 0)
     {
-        // Apply sheen layer using Gz implementation
         half3 sheenBRDF = GzCalculateSheen(matData, ctx);
-        half albedoScaling = GzCalculateSheenAlbedoScaling(matData, ctx);
-        baseBRDF = (baseBRDF * albedoScaling + sheenBRDF) * ctx.NoL;
+        baseBRDF = baseBRDF + sheenBRDF;
     }
-    else 
-    {
-        // No sheen or backface - apply NoL with transmission consideration
-        #ifdef USE_DIFFUSE_TRANSMISSION
-        // Blend between NoL and abs(NoL) based on transmission factor
-        // When factor = 0: pure BRDF (use NoL)
-        // When factor = 1: pure BTDF on backside (use abs(NoL))
-        half absNoL = abs(ctx.NoL);
-        half lightDot = lerp(ctx.NoL, absNoL, matData.diffuseTransmissionFactor);
-        baseBRDF = baseBRDF * lightDot;
-        #else
-        baseBRDF = baseBRDF * ctx.NoL;
-        #endif
-    }
-    #else
-    // No sheen feature, apply NoL to base
-    #ifdef USE_DIFFUSE_TRANSMISSION
-    // Blend between NoL and abs(NoL) based on transmission factor
-    half absNoL = abs(ctx.NoL);
-    half lightDot = lerp(ctx.NoL, absNoL, matData.diffuseTransmissionFactor);
-    baseBRDF = baseBRDF * lightDot;
-    #else
-    baseBRDF = baseBRDF * ctx.NoL;
-    #endif
-    #endif
+#endif
     
-    // Step 4: Apply clearcoat layer on top (if present)
-    #ifdef USE_CLEARCOAT
+    // Step 4: Apply NoL
+#ifdef USE_DIFFUSE_TRANSMISSION
+    // Following Khronos: mix between NoL and abs(NoL) based on transmission
+    // Regular BRDF uses NoL, transmission BTDF uses abs(NoL)
+    half lightDot = lerp(ctx.NoL, abs(ctx.NoL), matData.diffuseTransmissionFactor);
+    baseBRDF = baseBRDF * lightDot;
+#else
+    baseBRDF = baseBRDF * ctx.NoL;
+#endif
+    
+    // Step 5: Apply clearcoat layer on top (if present)
+#ifdef USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Calculate clearcoat BRDF (without NoL)
@@ -306,7 +280,7 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
         // Attenuate base material and add clearcoat contribution
         baseBRDF = baseBRDF * (1.0 - clearcoatWeight) + clearcoatBRDF * ctx.ccNoL * clearcoatWeight;
     }
-    #endif
+#endif
     
     return baseBRDF;
 }
@@ -323,33 +297,50 @@ half3 GzCalculateBaseIndirect(GzMaterialData matData, GzLightingContext ctx,
     half3 F0 = matData.f0;
     half3 F90 = matData.f90;
     
-    // Environment Fresnel using Schlick approximation
-    half3 F = GzFresnelSchlick(F0, F90, ctx.NoV);
+    // Environment Fresnel using roughness-dependent Fresnel (Fdez-Agüera)
+    half3 F = GzFresnelSchlick(F0, F90, ctx.NoV, matData.roughness);
     
     // Energy conservation
     half3 kS = F;
     half3 kD = (1.0 - kS) * (1.0 - matData.metallic);
     
-    // Combine diffuse and specular indirect
-    half3 diffuse = indirectDiffuse * GzGetAlbedo(matData.baseColor, matData.metallic) * kD;
+    // Get base color (will be scaled by sheen in the main evaluation)
+    half3 albedo = GzGetAlbedo(matData.baseColor, matData.metallic);
     
-    // For specular: the environment map is already pre-convolved for roughness
-    // We just need to apply the Fresnel term which includes F0
+    // Combine diffuse and specular indirect
+    half3 diffuse = indirectDiffuse * albedo * kD;
     half3 specular = indirectSpecular * F;
     
     return diffuse + specular;
 }
 
 // Calculate sheen indirect contribution
-half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, half3 envDiffuse)
+half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, half3 envDiffuse, half3 envSpecular)
 {
-    #ifdef USE_SHEEN
-        if (GzMax3(matData.sheenColor) > 0)
-        {
-            // Simplified environment sheen - use diffuse approximation
-            return matData.sheenColor * envDiffuse * (1.0 - matData.sheenRoughness);
-        }
-    #endif
+#ifdef USE_SHEEN
+    if (GzMax3(matData.sheenColor) > 0)
+    {
+        // For sheen IBL, we need to approximate the Charlie BRDF response
+        // Without a Charlie-filtered environment map, we blend between diffuse and specular
+        // based on sheen roughness
+        
+        // Calculate sheen BRDF response for environment lighting
+        // Charlie distribution has a different energy profile than GGX
+        // It's broader and more diffuse-like, especially at high roughness
+        
+        // Use sheen roughness to interpolate between specular and diffuse environment
+        // This approximates the Charlie-filtered environment response
+        half sheenMix = matData.sheenRoughness;
+        half3 sheenEnv = lerp(envSpecular, envDiffuse, sheenMix);
+        
+        // The Charlie BRDF LUT would normally be applied here
+        // For now, use a simple approximation
+        half brdf = 1.0 - sheenMix * 0.5; // Rough approximation of Charlie BRDF integral
+        
+        // Apply sheen factor and rim boost (artistic control)
+        return matData.sheenColor * sheenEnv * brdf * matData.sheenFactor * matData.sheenRimBoost;
+    }
+#endif
     
     return half3(0, 0, 0);
 }
@@ -358,17 +349,18 @@ half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, ha
 // clearcoatEnvSpecular should be pre-sampled using clearcoat reflection vector
 half3 GzCalculateClearcoatIndirect(GzMaterialData matData, half3 viewDir, half3 clearcoatEnvSpecular)
 {
-    #ifdef USE_CLEARCOAT
-        if (matData.clearcoatFactor > 0)
-        {
-            // Calculate fresnel with clearcoat normal
-            half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
-            half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
-            half3 F = GzFresnelSchlick(clearcoatF0, half3(1, 1, 1), ccNoV);
-            
-            return clearcoatEnvSpecular * F * matData.clearcoatFactor;
-        }
-    #endif
+#ifdef USE_CLEARCOAT
+    if (matData.clearcoatFactor > 0)
+    {
+        // Calculate fresnel with clearcoat normal using roughness-dependent Fresnel
+        half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
+        half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
+        half3 clearcoatF90 = half3(1, 1, 1);
+        half3 F = GzFresnelSchlick(clearcoatF0, clearcoatF90, ccNoV, matData.clearcoatRoughness);
+        
+        return clearcoatEnvSpecular * F * matData.clearcoatFactor;
+    }
+#endif
     
     return half3(0, 0, 0);
 }
@@ -378,29 +370,42 @@ half3 GzCalculateClearcoatIndirect(GzMaterialData matData, half3 viewDir, half3 
 half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx,
                                    half3 indirectDiffuse, half3 indirectSpecular, half3 clearcoatEnvSpecular)
 {
-    // Base indirect
+    // Apply sheen albedo scaling to base color if needed
+    half3 originalBaseColor = matData.baseColor;
+#ifdef USE_SHEEN
+    if (GzMax3(matData.sheenColor) > 0)
+    {
+        half albedoScaling = GzCalculateSheenAlbedoScalingIndirect(matData, ctx.NoV);
+        matData.baseColor = matData.baseColor * albedoScaling;
+    }
+#endif
+    
+    // Base indirect with potentially scaled base color
     half3 result = GzCalculateBaseIndirect(matData, ctx, indirectDiffuse, indirectSpecular);
+    matData.baseColor = originalBaseColor; // Restore
     
     // Apply occlusion
     result *= matData.occlusion;
     
-    // Sheen indirect
-    #ifdef USE_SHEEN
-        half3 sheenIndirect = GzCalculateSheenIndirect(matData, ctx, indirectDiffuse);
-        half albedoScaling = GzCalculateSheenAlbedoScaling(matData, ctx);
-        result = result * albedoScaling + sheenIndirect * matData.occlusion;
-    #endif
-    
-    // Clearcoat indirect with pre-sampled environment
-    #ifdef USE_CLEARCOAT
-        half3 clearcoatIndirect = GzCalculateClearcoatIndirect(matData, ctx.viewDir, clearcoatEnvSpecular);
-        half3 clearcoatFresnel = GzCalculateClearcoatFresnel(matData, ctx.viewDir);
-        result = result * (1.0 - clearcoatFresnel) + clearcoatIndirect;
-    #else
-        // When clearcoat is not enabled, we still need to accept the parameter
-        // but we don't use it - this prevents shader compilation errors
-        // The compiler should optimize this out
-    #endif
+// Add sheen indirect on top
+#ifdef USE_SHEEN
+    if (GzMax3(matData.sheenColor) > 0)
+    {
+        half3 sheenIndirect = GzCalculateSheenIndirect(matData, ctx, indirectDiffuse, indirectSpecular);
+        result = result + sheenIndirect * matData.occlusion;
+    }
+#endif
+
+// Clearcoat indirect with pre-sampled environment
+#ifdef USE_CLEARCOAT
+    half3 clearcoatIndirect = GzCalculateClearcoatIndirect(matData, ctx.viewDir, clearcoatEnvSpecular);
+    half3 clearcoatFresnel = GzCalculateClearcoatFresnel(matData, ctx.viewDir);
+    result = result * (1.0 - clearcoatFresnel) + clearcoatIndirect;
+#else
+    // When clearcoat is not enabled, we still need to accept the parameter
+    // but we don't use it - this prevents shader compilation errors
+    // The compiler should optimize this out
+#endif
     
     return result;
 }

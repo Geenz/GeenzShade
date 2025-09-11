@@ -36,6 +36,7 @@ struct GzMaterialData
     
     // KHR_materials_sheen
     half3 sheenColor;
+    half sheenFactor;
     half sheenRoughness;
     half sheenRimBoost;  // Artistic enhancement (1 = spec compliant)
     
@@ -77,6 +78,7 @@ GzMaterialData GzCreateMaterialData()
     data.clearcoatNormal = half3(0, 0, 1);
     
     data.sheenColor = half3(0, 0, 0);
+    data.sheenFactor = 0;
     data.sheenRoughness = 0;
     data.sheenRimBoost = 1;  // Default to 1 = glTF compliant (no boost)
     
