@@ -321,8 +321,8 @@ Shader "GeenzShade/GzPBR"
                     }
                 #endif
                 
-                // Apply fog
-                UNITY_APPLY_FOG(i.fogCoord, finalColor);
+                // Apply fog (fog coord is stored in eyeVec.w)
+                UNITY_APPLY_FOG(i.eyeVec.w, finalColor);
                 
                 // Premultiply alpha for proper blending
                 #ifdef _RENDERMODE_PREMULTIPLIEDALPHA
@@ -413,8 +413,8 @@ Shader "GeenzShade/GzPBR"
                     color = lightResult * ctx.lightColor;
                 }
                 
-                // Apply fog
-                UNITY_APPLY_FOG_COLOR(i.fogCoord, color, half4(0,0,0,0));
+                // Apply fog (fog coord is stored in eyeVec.w)
+                UNITY_APPLY_FOG_COLOR(i.eyeVec.w, color, half4(0,0,0,0));
                 
                 // Apply alpha
                 half alpha = matData.alpha;

@@ -147,7 +147,7 @@ Material:
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
     - _SheenFactor: 1
-    - _SheenRimBoost: 1
+    - _SheenRimBoost: 4.47
     - _SheenRoughness: 0.588
     - _SmoothnessTextureChannel: 0
     - _SpecularAACameraDistanceFalloff: 20
@@ -183,6 +183,6 @@ Material:
     - _DiffuseTransmissionColorFactor: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _EmissiveFactor: {r: 0, g: 0, b: 0, a: 1}
-    - _SheenColor: {r: 1, g: 0, b: 0, a: 1}
+    - _SheenColor: {r: 1, g: 1, b: 1, a: 1}
     - _SpecularColor: {r: 1, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []
