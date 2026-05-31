@@ -14,6 +14,7 @@ Material:
   m_ValidKeywords:
   - USE_ENVIRONMENT_REFLECTION
   - USE_IRIDESCENCE
+  - USE_SSR
   - VERTEXLIGHT_ON
   - _RENDERMODE_OPAQUE
   - _SHDOMINANTLIGHT_ON
@@ -136,6 +137,7 @@ Material:
     - _IridescenceThicknessMax: 692
     - _IridescenceThicknessMin: 185
     - _LightIntensityMultiplier: 3
+    - _LightmapReflectionBlend: 0
     - _Metallic: 1
     - _Mode: 0
     - _NormalScale: 1
@@ -146,6 +148,13 @@ Material:
     - _Roughness: 0.25
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
+    - _SSRBinarySteps: 4
+    - _SSREdgeFade: 0.1
+    - _SSRIntensity: 1
+    - _SSRMaxDistance: 2.4
+    - _SSRMaxRoughness: 1
+    - _SSRStepCount: 24
+    - _SSRThickness: 0.25
     - _SheenFactor: 0
     - _SheenRimBoost: 1
     - _SheenRoughness: 0
@@ -169,6 +178,7 @@ Material:
     - _UseMROTexture: 1
     - _UseNormalTexture: 0
     - _UseORMTexture: 1
+    - _UseSSR: 1
     - _UseSheen: 0
     - _UseSheenTexture: 0
     - _UseSpecularAntialiasing: 0

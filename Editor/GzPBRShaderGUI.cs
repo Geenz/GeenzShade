@@ -23,6 +23,8 @@ namespace GeenzShade
         private static bool lightingFoldout = false;
         private static bool environmentFoldout = false;
         private static bool specularFoldout = false;
+        private static bool ssrFoldout = false;
+        private static bool qualityTierFoldout = false;
         
         // Light Volumes detection
         private static bool? lightVolumesInstalled = null;
@@ -243,6 +245,18 @@ namespace GeenzShade
                     EditorGUILayout.EndHorizontal();
                 }
 
+                EditorGUILayout.Space(5);
+                // Render queue override (numeric). -1 = use the shader's default
+                // queue. Lets you fine-tune draw order relative to other materials.
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(
+                    new GUIContent("Render Queue", "Override the render queue. -1 = use the shader's default."),
+                    GUILayout.Width(EditorGUIUtility.labelWidth));
+                int newQueue = EditorGUILayout.IntField(material.renderQueue);
+                if (newQueue != material.renderQueue)
+                    material.renderQueue = newQueue;
+                EditorGUILayout.EndHorizontal();
+
                 EditorGUI.indentLevel--;
             }
         }
@@ -275,6 +289,12 @@ namespace GeenzShade
             
             // Environment Properties
             DrawEnvironmentProperties(materialEditor, properties, material);
+
+            // Screen-Space Reflections (Ultra/LOD0 only)
+            DrawSSRProperties(materialEditor, properties, material);
+
+            // Quality Tier (shader LOD)
+            DrawQualityTier(materialEditor, properties, material);
         }
 
         private void DrawBaseProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
@@ -694,6 +714,26 @@ namespace GeenzShade
             }
         }
 
+        private bool GameObjectIsStaticOrLightmapped(MaterialEditor materialEditor)
+        {
+            foreach (var target in materialEditor.targets)
+            {
+                Material mat = target as Material;
+                if (mat != null && (mat.globalIlluminationFlags & MaterialGlobalIlluminationFlags.BakedEmissive) != 0)
+                    return true;
+            }
+            // Check if any selected renderer is lightmap static
+            if (Selection.activeGameObject != null)
+            {
+                var renderer = Selection.activeGameObject.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    return GameObjectUtility.AreStaticEditorFlagsSet(Selection.activeGameObject, StaticEditorFlags.ContributeGI);
+                }
+            }
+            return false;
+        }
+
         private bool CheckLightVolumesInstalled()
         {
             if (lightVolumesInstalled == null)
@@ -847,8 +887,23 @@ namespace GeenzShade
                     }
                 }
                 
+                // Lightmap Reflection Blend — only relevant for static/lightmapped objects
+                if ((material.globalIlluminationFlags & MaterialGlobalIlluminationFlags.RealtimeEmissive) == 0
+                    || material.globalIlluminationFlags == MaterialGlobalIlluminationFlags.BakedEmissive
+                    || GameObjectIsStaticOrLightmapped(materialEditor))
+                {
+                    var lightmapReflectionBlendProp = FindProperty("_LightmapReflectionBlend", properties);
+                    if (lightmapReflectionBlendProp != null)
+                    {
+                        lightmapReflectionBlendProp.floatValue = EditorGUILayout.Slider(
+                            new GUIContent("Lightmap Reflection Blend",
+                                "Blends indirect specular toward baked lightmap color. 0 = full reflections (spec-correct), 1 = fully tinted by lightmap. Only affects static/lightmapped objects."),
+                            lightmapReflectionBlendProp.floatValue, 0f, 1f);
+                    }
+                }
+
                 EditorGUILayout.Space();
-                
+
                 var fallbackCubemapProp = FindProperty("_FallbackCubemap", properties);
                 if (fallbackCubemapProp != null)
                 {
@@ -945,6 +1000,96 @@ namespace GeenzShade
                 
                 EditorGUI.indentLevel--;
             }
+        }
+
+        private void DrawSlider(MaterialProperty[] properties, string name, string label, float min, float max)
+        {
+            var p = FindProperty(name, properties);
+            if (p != null)
+                p.floatValue = EditorGUILayout.Slider(label, p.floatValue, min, max);
+        }
+
+        private void DrawSSRProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            var useSSRProp = FindProperty("_UseSSR", properties);
+            if (useSSRProp == null) return;
+
+            ssrFoldout = EditorGUILayout.Foldout(ssrFoldout, "Screen-Space Reflections (Ultra / LOD0 only)", true);
+            if (!ssrFoldout) return;
+
+            EditorGUI.indentLevel++;
+
+            EditorGUILayout.HelpBox(
+                "Screen-space reflections (adapted from Mochie's shaders) only run on the Ultra tier (LOD 400). " +
+                "They require the camera to render a depth texture — in VRChat that means a realtime shadow-casting " +
+                "directional light, or a depth-enabled camera. Use the Render Queue field (Advanced Render Mode) to draw " +
+                "reflective materials after the geometry they should reflect. SSR is skipped in mirrors and for rough surfaces.",
+                MessageType.Info);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                new GUIContent("Enable SSR", "Per-material toggle. Only effective on the Ultra (LOD 400) tier."),
+                GUILayout.Width(EditorGUIUtility.labelWidth));
+            bool useSSR = useSSRProp.floatValue > 0.5f;
+            bool newUseSSR = EditorGUILayout.Toggle(useSSR);
+            if (newUseSSR != useSSR)
+                useSSRProp.floatValue = newUseSSR ? 1.0f : 0.0f;
+            EditorGUILayout.EndHorizontal();
+
+            if (newUseSSR)
+            {
+                EditorGUI.indentLevel++;
+                DrawSlider(properties, "_SSRStrength", "Strength", 0f, 1f);
+                DrawSlider(properties, "_SSRMaxRoughness", "Max Roughness", 0f, 1f);
+                DrawSlider(properties, "_SSRHeight", "Ray Height / Step", 0.001f, 2f);
+                DrawSlider(properties, "_SSREdgeFade", "Edge Fade", 0f, 0.5f);
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUI.indentLevel--;
+        }
+
+        private static int LODToTierIndex(int lod)
+        {
+            if (lod >= 400) return 0;
+            if (lod >= 300) return 1;
+            if (lod >= 200) return 2;
+            return 3;
+        }
+
+        private void DrawQualityTier(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            qualityTierFoldout = EditorGUILayout.Foldout(qualityTierFoldout, "Quality Tier (Shader LOD)", true);
+            if (!qualityTierFoldout) return;
+
+            EditorGUI.indentLevel++;
+
+            EditorGUILayout.HelpBox(
+                "Quality tiers use Unity shader LOD. This is GLOBAL per shader asset — changing it affects ALL materials " +
+                "using GzPBR, not just this one. Treat it as an authoring/preview control; for builds, drive " +
+                "Shader.globalMaximumLOD or shader.maximumLOD from script.\n\n" +
+                "Ultra (400): exact iridescence/sheen, clearcoat\n" +
+                "High (300): approx iridescence/sheen, clearcoat\n" +
+                "Medium (200): approx iridescence/sheen, no clearcoat\n" +
+                "Low (100): no iridescence / sheen / clearcoat",
+                MessageType.Info);
+
+            Shader shader = material.shader;
+            if (shader == null) { EditorGUI.indentLevel--; return; }
+
+            int tierIndex = LODToTierIndex(shader.maximumLOD);
+            string[] tierNames = { "Ultra (400)", "High (300)", "Medium (200)", "Low (100)" };
+            int newTierIndex = EditorGUILayout.Popup(
+                new GUIContent("Max Tier (global)", "Sets shader.maximumLOD for ALL GzPBR materials in this project session."),
+                tierIndex, tierNames);
+            if (newTierIndex != tierIndex)
+            {
+                int[] lodValues = { 400, 300, 200, 100 };
+                shader.maximumLOD = lodValues[newTierIndex];
+                EditorUtility.SetDirty(shader);
+            }
+
+            EditorGUI.indentLevel--;
         }
 
         private void SetupRenderMode(Material material, RenderMode mode)
@@ -1086,6 +1231,7 @@ namespace GeenzShade
             UpdateFeatureKeyword(material, properties, "_UseEnvironmentReflection", "USE_ENVIRONMENT_REFLECTION");
             UpdateFeatureKeyword(material, properties, "_UseSpecularAntialiasing", "USE_SPECULAR_ANTIALIASING");
             UpdateFeatureKeyword(material, properties, "_UseVRCLightVolumes", "USE_VRC_LIGHT_VOLUMES");
+            UpdateFeatureKeyword(material, properties, "_UseSSR", "USE_SSR");
             
             // Lighting keywords
             UpdateFeatureKeyword(material, properties, "_VertexLights", "VERTEXLIGHT_ON");

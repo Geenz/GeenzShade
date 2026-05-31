@@ -26,7 +26,7 @@ half3 GzFresnelSchlick(half3 f0, half3 f90, half cosTheta, half roughness)
 {
     // Roughness-dependent Fresnel range
     // On rough surfaces, we interpolate F90 toward F0 to reduce the Fresnel effect
-    half3 roughF90 = max(half3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), f0);
+    half3 roughF90 = min(f90, max(half3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), f0));
     return f0 + (roughF90 - f0) * GzPow5(saturate(1.0 - cosTheta));
 }
 
@@ -34,7 +34,7 @@ half3 GzFresnelSchlick(half3 f0, half3 f90, half cosTheta, half roughness)
 half GzFresnelSchlick(half f0, half f90, half cosTheta, half roughness)
 {
     // Roughness-dependent Fresnel range
-    half roughF90 = max(1.0 - roughness, f0);
+    half roughF90 = min(f90, max(1.0 - roughness, f0));
     return f0 + (roughF90 - f0) * GzPow5(saturate(1.0 - cosTheta));
 }
 

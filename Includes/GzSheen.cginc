@@ -71,27 +71,40 @@ half3 GzCalculateSheen(GzMaterialData matData, GzLightingContext ctx)
 {
     half D = GzD_Charlie(matData.sheenRoughness, ctx.NoH);
     half V = GzV_Sheen(ctx.NoL, ctx.NoV, matData.sheenRoughness);
-    
+
     // Apply sheen factor and rim boost
     return matData.sheenColor * D * V * matData.sheenFactor * matData.sheenRimBoost;
 }
 
+// Cheap cloth visibility (Ashikhmin/Neubelt) for lower quality tiers.
+// Replaces the numeric Lambda-based GzV_Sheen (two exp + pow evaluations)
+// with a single reciprocal. Keeps the Charlie distribution for the lobe shape.
+half GzV_SheenApprox(half NoL, half NoV, half sheenRoughness)
+{
+    return saturate(0.25 * GzRcp(NoL + NoV - NoL * NoV));
+}
+
+// Approximate sheen BRDF for lower quality tiers (GZ_APPROX_SHEEN).
+half3 GzCalculateSheenApprox(GzMaterialData matData, GzLightingContext ctx)
+{
+    half D = GzD_Charlie(matData.sheenRoughness, ctx.NoH);
+    half V = GzV_SheenApprox(ctx.NoL, ctx.NoV, matData.sheenRoughness);
+    return matData.sheenColor * D * V * matData.sheenFactor * matData.sheenRimBoost;
+}
+
 // Approximate sheen albedo scaling LUT without texture
-// This approximates the Charlie directional albedo
+// This approximates the Charlie directional albedo E(cosTheta, roughness)
 half GzSheenAlbedoScalingLUT(half NoV, half sheenRoughness)
 {
-    // Approximate the sheen directional albedo
-    // Based on empirical fit to Charlie BRDF energy
-    // This should return a value that when multiplied by max(sheenColor)
-    // gives us the amount to subtract from 1.0 for albedo scaling
-    
-    // At grazing angles (low NoV), sheen occludes more
-    // Rougher sheen spreads energy more, reducing the occlusion effect
-    half grazingTerm = saturate(1.0 - NoV);
-    half roughnessModulation = 1.0 - sheenRoughness * 0.5; // Rougher = less occlusion
-    
-    // Simple approximation of the directional albedo
-    return grazingTerm * roughnessModulation;
+    // Analytical approximation of Charlie directional albedo E(cosTheta, roughness)
+    // Nonlinear fit: cubic at low roughness, quadratic at high roughness
+    half x = 1.0 - NoV;
+    half x2 = x * x;
+    half x3 = x2 * x;
+    // Low roughness concentrates energy at grazing (cubic)
+    // High roughness spreads energy more evenly (quadratic)
+    // Scale increases with roughness (more total energy in sheen lobe)
+    return saturate(lerp(x3, x2, sheenRoughness) * lerp(0.25, 0.5, sheenRoughness));
 }
 
 // Calculate sheen albedo scaling for energy conservation (direct lighting)

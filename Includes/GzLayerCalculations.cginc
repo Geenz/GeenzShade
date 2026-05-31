@@ -74,19 +74,6 @@ half3 GzCalculateBaseBRDF(GzMaterialData matData, GzLightingContext ctx, half3 F
 }
 
 // ============================================
-// Iridescence Layer Calculations
-// ============================================
-
-// DEPRECATED: Iridescence is now applied in GzMaterialSampling
-// This function is kept for backward compatibility only
-half3 GzCalculateIridescence(GzMaterialData matData, GzLightingContext ctx, half3 baseF0)
-{
-    // Iridescence is now pre-calculated in material sampling
-    // Return the material's F0 which already includes iridescence
-    return matData.f0;
-}
-
-// ============================================
 // Sheen Layer Calculations (functions moved to GzSheen.cginc)
 // ============================================
 // Note: Sheen is now properly applied by scaling base color before diffuse calculation,
@@ -101,7 +88,7 @@ half3 GzCalculateIridescence(GzMaterialData matData, GzLightingContext ctx, half
 // Note: NoL is NOT included in the BRDF, it's applied during layering
 half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
 {
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Fixed F0 for clearcoat (IOR = 1.5, F0 = ((1-1.5)/(1+1.5))^2 = 0.04)
@@ -130,28 +117,11 @@ half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
     return half3(0, 0, 0);
 }
 
-// Calculate clearcoat Fresnel for layer mixing (uses clearcoat normal)
-half3 GzCalculateClearcoatFresnel(GzMaterialData matData, half3 viewDir)
-{
-#ifdef USE_CLEARCOAT
-    if (matData.clearcoatFactor > 0)
-    {
-        // Use clearcoat normal for fresnel calculation
-        half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
-        half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
-        half3 clearcoatF90 = half3(1, 1, 1);
-        return GzFresnelSchlick(clearcoatF0, clearcoatF90, ccNoV, matData.clearcoatRoughness) * matData.clearcoatFactor;
-    }
-#endif
-    
-    return half3(0, 0, 0);
-}
-
 // Calculate clearcoat attenuation for emission
 // Per spec: coated_emission = emission * (1 - clearcoat * clearcoat_fresnel)
 half3 GzAttenuateEmissionByClearcoat(half3 emission, GzMaterialData matData, half3 viewDir)
 {
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Calculate clearcoat Fresnel
@@ -165,20 +135,6 @@ half3 GzAttenuateEmissionByClearcoat(half3 emission, GzMaterialData matData, hal
 #endif
     
     return emission;
-}
-
-// Apply clearcoat layer on top of base
-half3 GzApplyClearcoatLayer(half3 baseBRDF, GzMaterialData matData, GzLightingContext ctx)
-{
-#ifdef USE_CLEARCOAT
-    half3 clearcoatBRDF = GzCalculateClearcoat(matData, ctx);
-    half3 clearcoatFresnel = GzCalculateClearcoatFresnel(matData, ctx.NoV);
-    
-    // Layer mixing: base * (1 - clearcoatFresnel) + clearcoat
-    return baseBRDF * (1.0 - clearcoatFresnel) + clearcoatBRDF;
-#else
-    return baseBRDF;
-#endif
 }
 
 // ============================================
@@ -214,7 +170,7 @@ half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingConte
 half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
 {
     // Populate clearcoat vectors (always needed for clearcoat layer)
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     GzPopulateClearcoatVectors(ctx, matData.clearcoatNormal);
 #endif
     
@@ -225,7 +181,7 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
     
     // Step 3: Apply sheen albedo scaling to base color if needed
     half3 scaledBaseColor = matData.baseColor;
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         half albedoScaling = GzCalculateSheenAlbedoScaling(matData, ctx);
@@ -242,10 +198,15 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
     matData.baseColor = originalBaseColor; // Restore original
     
     // Step 4: Add sheen layer on top
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0 && ctx.NoL > 0)
     {
-        half3 sheenBRDF = GzCalculateSheen(matData, ctx);
+        // Exact sheen visibility at Tier 0, cheap cloth visibility at Tier 1-2
+        #ifdef GZ_APPROX_SHEEN
+            half3 sheenBRDF = GzCalculateSheenApprox(matData, ctx);
+        #else
+            half3 sheenBRDF = GzCalculateSheen(matData, ctx);
+        #endif
         baseBRDF = baseBRDF + sheenBRDF;
     }
 #endif
@@ -261,7 +222,7 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
 #endif
     
     // Step 5: Apply clearcoat layer on top (if present)
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Calculate clearcoat BRDF (without NoL)
@@ -317,7 +278,7 @@ half3 GzCalculateBaseIndirect(GzMaterialData matData, GzLightingContext ctx,
 // Calculate sheen indirect contribution
 half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, half3 envDiffuse, half3 envSpecular)
 {
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         // For sheen IBL, we need to approximate the Charlie BRDF response
@@ -345,26 +306,6 @@ half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, ha
     return half3(0, 0, 0);
 }
 
-// Calculate clearcoat indirect contribution
-// clearcoatEnvSpecular should be pre-sampled using clearcoat reflection vector
-half3 GzCalculateClearcoatIndirect(GzMaterialData matData, half3 viewDir, half3 clearcoatEnvSpecular)
-{
-#ifdef USE_CLEARCOAT
-    if (matData.clearcoatFactor > 0)
-    {
-        // Calculate fresnel with clearcoat normal using roughness-dependent Fresnel
-        half ccNoV = saturate(dot(matData.clearcoatNormal, viewDir));
-        half3 clearcoatF0 = half3(0.04, 0.04, 0.04);
-        half3 clearcoatF90 = half3(1, 1, 1);
-        half3 F = GzFresnelSchlick(clearcoatF0, clearcoatF90, ccNoV, matData.clearcoatRoughness);
-        
-        return clearcoatEnvSpecular * F * matData.clearcoatFactor;
-    }
-#endif
-    
-    return half3(0, 0, 0);
-}
-
 // Evaluate all layers for indirect lighting
 // Now takes clearcoatEnvSpecular as a parameter instead of worldPos
 half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx,
@@ -372,7 +313,7 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
 {
     // Apply sheen albedo scaling to base color if needed
     half3 originalBaseColor = matData.baseColor;
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         half albedoScaling = GzCalculateSheenAlbedoScalingIndirect(matData, ctx.NoV);
@@ -388,7 +329,7 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
     result *= matData.occlusion;
     
 // Add sheen indirect on top
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         half3 sheenIndirect = GzCalculateSheenIndirect(matData, ctx, indirectDiffuse, indirectSpecular);
@@ -397,14 +338,23 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
 #endif
 
 // Clearcoat indirect with pre-sampled environment
-#ifdef USE_CLEARCOAT
-    half3 clearcoatIndirect = GzCalculateClearcoatIndirect(matData, ctx.viewDir, clearcoatEnvSpecular);
-    half3 clearcoatFresnel = GzCalculateClearcoatFresnel(matData, ctx.viewDir);
-    result = result * (1.0 - clearcoatFresnel) + clearcoatIndirect;
-#else
-    // When clearcoat is not enabled, we still need to accept the parameter
-    // but we don't use it - this prevents shader compilation errors
-    // The compiler should optimize this out
+#ifdef GZ_USE_CLEARCOAT
+    if (matData.clearcoatFactor > 0)
+    {
+        half ccNoV = saturate(dot(matData.clearcoatNormal, ctx.viewDir));
+        // Simple Schlick for layering weight — matches direct path and spec
+        half clearcoatFresnel = 0.04 + (1.0 - 0.04) * GzPow5(1.0 - ccNoV);
+        half clearcoatWeight = matData.clearcoatFactor * clearcoatFresnel;
+
+        // Clearcoat IBL response (roughness-dependent Fresnel is correct here)
+        half3 ccF0 = half3(0.04, 0.04, 0.04);
+        half3 ccF90 = half3(1, 1, 1);
+        half3 F = GzFresnelSchlick(ccF0, ccF90, ccNoV, matData.clearcoatRoughness);
+        half3 clearcoatIndirect = clearcoatEnvSpecular * F;
+
+        // Spec mix: coated = base*(1-w) + cc*w
+        result = result * (1.0 - clearcoatWeight) + clearcoatIndirect * clearcoatWeight;
+    }
 #endif
     
     return result;
@@ -416,5 +366,66 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
 {
     return GzEvaluateLayerStackIndirect(matData, ctx, indirectDiffuse, indirectSpecular, half3(0,0,0));
 }
+
+// ============================================
+// VRC Light Volumes — Per-Channel Evaluation
+// ============================================
+
+// Evaluate VRC Light Volumes with per-channel directional lighting
+// Each color channel gets its own L1-derived light direction, preserving
+// directional color variation through the full BRDF layer stack
+#ifdef USE_VRC_LIGHT_VOLUMES
+half3 GzEvaluateLightVolumes(float3 worldPos, half3 normal, half3 viewDir, GzMaterialData matData)
+{
+    if (!LightVolumesEnabled()) return half3(0, 0, 0);
+
+    float3 lvL0, lvL1r, lvL1g, lvL1b;
+    LightVolumeSH(worldPos, lvL0, lvL1r, lvL1g, lvL1b);
+
+    half3 result = half3(0, 0, 0);
+    half lvThreshold = 0.001;
+
+    // Red channel
+    half lenR = length(lvL1r);
+    if (lenR > lvThreshold)
+    {
+        GzLightingContext ctx = GzCreateLightingContext();
+        ctx.lightDir = lvL1r / lenR;
+        ctx.viewDir = viewDir;
+        ctx.lightColor = half3(lvL0.r, 0, 0);
+        ctx.lightAtten = 1.0;
+        GzPopulateLightingVectors(ctx, normal);
+        result += GzEvaluateLayerStack(matData, ctx) * ctx.lightColor;
+    }
+
+    // Green channel
+    half lenG = length(lvL1g);
+    if (lenG > lvThreshold)
+    {
+        GzLightingContext ctx = GzCreateLightingContext();
+        ctx.lightDir = lvL1g / lenG;
+        ctx.viewDir = viewDir;
+        ctx.lightColor = half3(0, lvL0.g, 0);
+        ctx.lightAtten = 1.0;
+        GzPopulateLightingVectors(ctx, normal);
+        result += GzEvaluateLayerStack(matData, ctx) * ctx.lightColor;
+    }
+
+    // Blue channel
+    half lenB = length(lvL1b);
+    if (lenB > lvThreshold)
+    {
+        GzLightingContext ctx = GzCreateLightingContext();
+        ctx.lightDir = lvL1b / lenB;
+        ctx.viewDir = viewDir;
+        ctx.lightColor = half3(0, 0, lvL0.b);
+        ctx.lightAtten = 1.0;
+        GzPopulateLightingVectors(ctx, normal);
+        result += GzEvaluateLayerStack(matData, ctx) * ctx.lightColor;
+    }
+
+    return result;
+}
+#endif
 
 #endif // GZ_LAYER_CALCULATIONS_INCLUDED

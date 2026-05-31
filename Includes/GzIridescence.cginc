@@ -58,23 +58,6 @@ half GzIorToFresnel0(half transmittedIor, half incidentIor)
     return GzSqr((transmittedIor - incidentIor) / (transmittedIor + incidentIor));
 }
 
-// Helper to get thickness blend factor for smooth IOR transition
-half GzGetThicknessBlendFactor(half thickness, half minThickness, half maxThickness)
-{
-    // Use a smoother transition range based on the thickness parameters
-    half transitionStart = minThickness * 0.3; // 30% of min thickness
-    half transitionEnd = minThickness * 0.8;   // 80% of min thickness
-    return smoothstep(transitionStart, transitionEnd, thickness);
-}
-
-// Calculate wavelength-dependent phase for improved color accuracy
-half3 GzGetWavelengthPhase(half opd)
-{
-    // Representative wavelengths for RGB in nanometers (visible spectrum)
-    half3 wavelengths = half3(680.0, 550.0, 440.0); // Red, Green, Blue
-    return 2.0 * UNITY_PI * opd / wavelengths;
-}
-
 // Main iridescence evaluation function (exact official glTF implementation)
 half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFilmThickness, half3 baseF0)
 {
@@ -137,53 +120,30 @@ half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFil
     return max(I, half3(0.0, 0.0, 0.0));
 }
 
-// DEPRECATED: These functions are kept for backward compatibility only
-// Iridescence is now applied automatically in GzSampleMaterialComplete()
-
-// Simple wrapper for backward compatibility
-half3 GzGetIridescentFresnel(half iridescenceFactor, half iridescenceIOR, half iridescenceThickness,
-                          half3 baseF0, half NoV)
+// Cheap thin-film approximation for lower quality tiers (GZ_APPROX_IRIDESCENCE).
+// Replaces the full Fourier sensitivity evaluation above with an analytic
+// per-channel interference cosine. Outside IOR is assumed to be 1.0, matching
+// the exact path's first argument. Returns an iridescent F0-like reflectance
+// the caller mixes over the base F0 by iridescenceFactor.
+half3 GzEvalIridescenceApprox(half eta2, half cosTheta1, half thinFilmThickness, half3 baseF0)
 {
-    // For backward compatibility, still calculate iridescence here
-    if (iridescenceFactor <= 0.0)
-        return baseF0;
-    
-    half3 iridF0 = GzEvalIridescence(1.0, iridescenceIOR, NoV, iridescenceThickness, baseF0);
-    return lerp(baseF0, iridF0, iridescenceFactor);
-}
+    // Snell refraction into the film (outside IOR = 1.0)
+    half sinTheta2Sq = GzSqr(1.0 / eta2) * (1.0 - GzSqr(cosTheta1));
+    half cosTheta2 = sqrt(saturate(1.0 - sinTheta2Sq));
 
-// DEPRECATED: F0/F90 calculation is now centralized in GzMaterialSampling
-// This function is kept for backward compatibility only
-void GetIridescentFresnelSpecular(half iridescenceFactor, half iridescenceIOR, half iridescenceThickness,
-                                  half baseIOR, half specularFactor, half3 specularColorFactor,
-                                  half metallic, half3 baseColor, half NoV,
-                                  out half3 iridF0, out half3 iridF90)
-{
-    // For backward compatibility, still provide the calculation
-    // In new code, use GzSampleMaterialComplete which handles this automatically
-    
-    // Calculate base F0
-    half iorToF0 = (1.0 - baseIOR) / (1.0 + baseIOR);
-    iorToF0 = iorToF0 * iorToF0;
-    half3 baseF0 = iorToF0 * specularColorFactor * specularFactor;
-    baseF0 = min(baseF0, half3(1.0, 1.0, 1.0));
-    
-    // Override for metals
-    baseF0 = lerp(baseF0, baseColor, metallic);
-    half3 baseF90 = lerp(half3(specularFactor, specularFactor, specularFactor), half3(1, 1, 1), metallic);
-    
-    // Apply iridescence if present
-    if (iridescenceFactor > 0.0)
-    {
-        half3 iridescenceF0 = GzEvalIridescence(1.0, iridescenceIOR, NoV, iridescenceThickness, baseF0);
-        iridF0 = lerp(baseF0, iridescenceF0, iridescenceFactor);
-        iridF90 = baseF90; // F90 unchanged per glTF spec
-    }
-    else
-    {
-        iridF0 = baseF0;
-        iridF90 = baseF90;
-    }
+    // Optical path difference through the film (nanometres)
+    half opd = 2.0 * eta2 * thinFilmThickness * cosTheta2;
+
+    // Per-channel interference using representative RGB wavelengths (nm).
+    // +PI accounts for the reflection phase shift at the top interface.
+    const half3 invWavelength = half3(1.0 / 650.0, 1.0 / 550.0, 1.0 / 450.0);
+    half3 phase = (2.0 * UNITY_PI) * opd * invWavelength + UNITY_PI;
+    half3 interference = 0.5 + 0.5 * cos(phase);
+
+    // Thin films boost reflectance toward grazing; blend the rainbow over base F0.
+    half grazing = GzPow5(saturate(1.0 - cosTheta1));
+    half mixAmount = saturate(0.25 + 0.6 * grazing);
+    return lerp(baseF0, interference, mixAmount);
 }
 
 #endif // GZ_IRIDESCENCE_INCLUDED

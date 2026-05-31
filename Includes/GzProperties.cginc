@@ -94,11 +94,15 @@ half _SpecularAACameraDistanceFalloff;
 // Light intensity multiplier
 half _LightIntensityMultiplier;
 
-// ============================================
-// System Textures
-// ============================================
+// Lightmap reflection blend
+half _LightmapReflectionBlend;
 
-UNITY_DECLARE_DEPTH_TEXTURE(_CameraDepthTexture);
+// Screen-space reflections (Tier 0 only; toggled per-material via USE_SSR).
+// _CameraDepthTexture and the GrabPass capture are declared in GzSSR.cginc.
+half _SSRStrength;
+half _SSRHeight;
+half _SSREdgeFade;
+half _SSRMaxRoughness;
 
 // ============================================
 // Shader Feature Definitions

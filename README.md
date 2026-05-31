@@ -11,7 +11,7 @@
 
 ### Option 2: Install specific version
 To install a specific version, append the version tag:
-- `https://github.com/Geenz/GeenzShade.git#upm/v0.0.11`
+- `https://github.com/Geenz/GeenzShade.git#upm/v0.0.12`
 
 ### Option 3: Add to manifest.json
 Add this line to your `Packages/manifest.json` dependencies:
@@ -93,6 +93,27 @@ A comprehensive, physically-based rendering (PBR) shader system for Unity that i
 
 ##### VRChat Features
 - **Light Volume Support**: Full integration with VRChat's light volume system
+
+##### Quality Tiers (Shader LOD)
+GzPBR ships as four Unity shader-LOD tiers. Unity selects the highest tier whose LOD value is `<= Shader.globalMaximumLOD` (or the shader asset's `maximumLOD`), so lowering that ceiling scales quality/cost down across the board:
+
+| Tier | LOD | Iridescence & Sheen | Clearcoat |
+|------|-----|---------------------|-----------|
+| Ultra | 400 | Exact | Yes |
+| High | 300 | Approximate | Yes |
+| Medium | 200 | Approximate | No |
+| Low | 100 | Off | Off |
+
+At High/Medium the iridescence and sheen layers switch to cheaper analytic approximations (a thin-film interference cosine and a cloth visibility term) instead of the full Fourier/numeric evaluations. At Low those layers plus clearcoat are compiled out entirely.
+
+> **Limitation:** Unity shader LOD is **global per shader asset**, not per-material. The material inspector's "Quality Tier" dropdown sets `shader.maximumLOD` for *every* GzPBR material as an authoring/preview convenience. To drive it at runtime (e.g. a quality setting), set `Shader.globalMaximumLOD` or `shader.maximumLOD` from script. True per-material tiering would require separate shader assets per tier.
+
+##### Screen-Space Reflections (Ultra tier only)
+The Ultra tier adds optional screen-space reflections, enabled per material with the **Use Screen-Space Reflections** toggle. The implementation is adapted from [Mochie's Unity Shaders](https://github.com/MochiMochiBoboService/Mochies-Unity-Shaders) (MIT, © 2020 MochiesCode); the original SSR technique is by **error.mdl, Toocanzs, and Xiexe**, reworked by Mochie. See `Includes/GzSSR.cginc` for the attribution and license notice.
+
+- **Requires a camera depth texture.** In VRChat that means a realtime shadow-casting directional light in the scene, or a depth-enabled camera. Without depth the rays miss and reflections fall back to probes/cubemap.
+- Uses a GrabPass capture of the opaque scene and a view-space ray march. Set the material's **Render Queue** (Advanced Render Mode) so it draws after the geometry it should reflect.
+- Skipped in mirrors and for rough surfaces; fades toward screen edges. Stereo-correct for single-pass-instanced VR. Tunable via Strength, Max Roughness, Ray Height/Step, and Edge Fade.
 
 #### Texture Channels
 
