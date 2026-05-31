@@ -77,21 +77,18 @@ half3 GzCalculateSheen(GzMaterialData matData, GzLightingContext ctx)
 }
 
 // Approximate sheen albedo scaling LUT without texture
-// This approximates the Charlie directional albedo
+// This approximates the Charlie directional albedo E(cosTheta, roughness)
 half GzSheenAlbedoScalingLUT(half NoV, half sheenRoughness)
 {
-    // Approximate the sheen directional albedo
-    // Based on empirical fit to Charlie BRDF energy
-    // This should return a value that when multiplied by max(sheenColor)
-    // gives us the amount to subtract from 1.0 for albedo scaling
-    
-    // At grazing angles (low NoV), sheen occludes more
-    // Rougher sheen spreads energy more, reducing the occlusion effect
-    half grazingTerm = saturate(1.0 - NoV);
-    half roughnessModulation = 1.0 - sheenRoughness * 0.5; // Rougher = less occlusion
-    
-    // Simple approximation of the directional albedo
-    return grazingTerm * roughnessModulation;
+    // Analytical approximation of Charlie directional albedo E(cosTheta, roughness)
+    // Nonlinear fit: cubic at low roughness, quadratic at high roughness
+    half x = 1.0 - NoV;
+    half x2 = x * x;
+    half x3 = x2 * x;
+    // Low roughness concentrates energy at grazing (cubic)
+    // High roughness spreads energy more evenly (quadratic)
+    // Scale increases with roughness (more total energy in sheen lobe)
+    return saturate(lerp(x3, x2, sheenRoughness) * lerp(0.25, 0.5, sheenRoughness));
 }
 
 // Calculate sheen albedo scaling for energy conservation (direct lighting)

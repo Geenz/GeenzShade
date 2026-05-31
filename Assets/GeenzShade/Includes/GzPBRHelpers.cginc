@@ -106,41 +106,6 @@ half3 GzApplyIridescence(half3 baseF0, half iridescenceFactor, half iridescenceI
 }
 
 // ============================================
-// Material Property Derivation
-// ============================================
-
-// Populate F0 and F90 based on material configuration
-void GzDeriveF0F90(inout GzMaterialData data)
-{
-    #ifdef USE_SPECULAR_EXTENSION
-        // When specular extension is used, apply it on top of IOR
-        data.f0 = GzGetF0Specular(data.baseColor, data.metallic, 
-                                  data.specularColor, data.specularFactor, data.ior);
-        data.f90 = GzGetF90Specular(data.metallic, data.specularFactor);
-    #else
-        // Standard metallic workflow with IOR
-        data.f0 = GzGetF0Metallic(data.baseColor, data.metallic, data.ior);
-        data.f90 = half3(1, 1, 1);
-    #endif
-}
-
-// ============================================
-// Energy Conservation Helpers
-// ============================================
-
-// GzMax3 is now in GzMath.cginc
-
-// Sheen albedo scaling for energy conservation
-half GzSheenAlbedoScaling(half3 sheenColor, half NoV)
-{
-    // Per glTF spec: albedo_scaling = 1.0 - max3(sheenColor) * E(NoV)
-    // E(NoV) is the directional albedo, approximated here
-    half maxSheenColor = GzMax3(sheenColor);
-    half E = GzPow5(1.0 - NoV); // Simplified directional albedo
-    return saturate(1.0 - maxSheenColor * E);
-}
-
-// ============================================
 // Texture Thickness Mapping
 // ============================================
 

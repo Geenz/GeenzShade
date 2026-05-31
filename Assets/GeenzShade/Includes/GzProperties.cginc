@@ -94,6 +94,9 @@ half _SpecularAACameraDistanceFalloff;
 // Light intensity multiplier
 half _LightIntensityMultiplier;
 
+// Lightmap reflection blend
+half _LightmapReflectionBlend;
+
 // ============================================
 // System Textures
 // ============================================

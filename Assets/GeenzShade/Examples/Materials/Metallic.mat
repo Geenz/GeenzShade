@@ -139,6 +139,7 @@ Material:
     - _IridescenceThicknessMax: 403.55
     - _IridescenceThicknessMin: 202.3
     - _LightIntensityMultiplier: 3
+    - _LightmapReflectionBlend: 0
     - _Metallic: 1
     - _Mode: 0
     - _NormalScale: 1

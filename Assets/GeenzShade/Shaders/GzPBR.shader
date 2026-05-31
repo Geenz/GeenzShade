@@ -148,6 +148,7 @@ Shader "GeenzShade/GzPBR"
         [HideInInspector] _RenderMode ("Render Mode", Float) = 0
         
         [Header(Environment)]
+        _LightmapReflectionBlend ("Lightmap Reflection Blend", Range(0,1)) = 0
         _ReflectionProbeThreshold ("Reflection Probe Threshold", Range(0,1)) = 0.1
         _SHThreshold ("SH Threshold", Range(0,1)) = 0.1
         _FallbackCubemap ("Fallback Environment", Cube) = "" {}
@@ -171,6 +172,7 @@ Shader "GeenzShade/GzPBR"
             Tags { "LightMode"="ForwardBase" }
             
             CGPROGRAM
+            #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_fwdbase
@@ -245,11 +247,6 @@ Shader "GeenzShade/GzPBR"
                                                                  viewDir, 
                                                                  matData.roughness, matData.occlusion, i.ambientOrLightmapUV, dirLightCtx.lightAtten);
                 
-                // Add Light Volumes ambient contribution
-                #ifdef USE_VRC_LIGHT_VOLUMES
-                    indirect.diffuse += GzGetLightVolumeAmbient(i.worldPos, matData.normal);
-                #endif
-                
                 // Initialize final color with emissive
                 // Apply clearcoat attenuation to emission per glTF spec
                 half3 emission = matData.emissive * matData.emissiveStrength;
@@ -311,14 +308,9 @@ Shader "GeenzShade/GzPBR"
                 finalColor += GzEvaluateLayerStackIndirect(matData, indirectCtx, 
                                                           indirect.diffuse, indirect.specular, clearcoatEnvSpecular);
                 
-                // VRC Light Volumes - use dominant light extraction
+                // VRC Light Volumes — per-channel directional evaluation
                 #ifdef USE_VRC_LIGHT_VOLUMES
-                    GzLightingContext lvCtx = GzCreateLightVolumeDominantLightContext(i.worldPos, matData.normal);
-                    if (lvCtx.lightAtten > 0)
-                    {
-                        half3 lvLight = GzEvaluateLayerStack(matData, lvCtx);
-                        finalColor += lvLight * lvCtx.lightColor;
-                    }
+                    finalColor += GzEvaluateLightVolumes(i.worldPos, matData.normal, viewDir, matData);
                 #endif
                 
                 // Apply fog (fog coord is stored in eyeVec.w)
@@ -435,6 +427,7 @@ Shader "GeenzShade/GzPBR"
             Tags { "LightMode"="ShadowCaster" }
             
             CGPROGRAM
+            #pragma target 3.0
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_shadowcaster
@@ -487,6 +480,7 @@ Shader "GeenzShade/GzPBR"
             Cull Off
             
             CGPROGRAM
+            #pragma target 3.0
             #pragma vertex vert_meta
             #pragma fragment frag_meta
             

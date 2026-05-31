@@ -694,6 +694,26 @@ namespace GeenzShade
             }
         }
 
+        private bool GameObjectIsStaticOrLightmapped(MaterialEditor materialEditor)
+        {
+            foreach (var target in materialEditor.targets)
+            {
+                Material mat = target as Material;
+                if (mat != null && (mat.globalIlluminationFlags & MaterialGlobalIlluminationFlags.BakedEmissive) != 0)
+                    return true;
+            }
+            // Check if any selected renderer is lightmap static
+            if (Selection.activeGameObject != null)
+            {
+                var renderer = Selection.activeGameObject.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    return GameObjectUtility.AreStaticEditorFlagsSet(Selection.activeGameObject, StaticEditorFlags.ContributeGI);
+                }
+            }
+            return false;
+        }
+
         private bool CheckLightVolumesInstalled()
         {
             if (lightVolumesInstalled == null)
@@ -847,8 +867,23 @@ namespace GeenzShade
                     }
                 }
                 
+                // Lightmap Reflection Blend — only relevant for static/lightmapped objects
+                if ((material.globalIlluminationFlags & MaterialGlobalIlluminationFlags.RealtimeEmissive) == 0
+                    || material.globalIlluminationFlags == MaterialGlobalIlluminationFlags.BakedEmissive
+                    || GameObjectIsStaticOrLightmapped(materialEditor))
+                {
+                    var lightmapReflectionBlendProp = FindProperty("_LightmapReflectionBlend", properties);
+                    if (lightmapReflectionBlendProp != null)
+                    {
+                        lightmapReflectionBlendProp.floatValue = EditorGUILayout.Slider(
+                            new GUIContent("Lightmap Reflection Blend",
+                                "Blends indirect specular toward baked lightmap color. 0 = full reflections (spec-correct), 1 = fully tinted by lightmap. Only affects static/lightmapped objects."),
+                            lightmapReflectionBlendProp.floatValue, 0f, 1f);
+                    }
+                }
+
                 EditorGUILayout.Space();
-                
+
                 var fallbackCubemapProp = FindProperty("_FallbackCubemap", properties);
                 if (fallbackCubemapProp != null)
                 {

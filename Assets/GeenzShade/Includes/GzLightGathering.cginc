@@ -25,19 +25,6 @@
 #endif
 
 // ============================================
-// Shadow and Attenuation Helpers
-// ============================================
-
-// Get shadow attenuation for ForwardBase
-half GzGetShadowAttenuationBase(GzVertexOutput i)
-{
-    return 1;
-    // Use Unity's UnityComputeForwardShadows function directly, same as Standard shader
-    // Pass lightmap UVs from _ShadowCoord.xy for mixed lighting with shadow masks
-    return UnityComputeForwardShadows(i._ShadowCoord.xy, i.worldPos, 0);
-}
-
-// ============================================
 // Lightmap Data Structure
 // ============================================
 
@@ -143,38 +130,6 @@ GzLightingContext GzCreateLightmapDominantLightContext(float3 worldPos, float2 l
     return ctx;
 }
 
-// Create lighting context for VRC Light Volumes dominant light
-GzLightingContext GzCreateLightVolumeDominantLightContext(float3 worldPos, half3 normal)
-{
-    GzLightingContext ctx = GzCreateLightingContext();
-    
-    #ifdef USE_VRC_LIGHT_VOLUMES
-        if (LightVolumesEnabled())
-        {
-            // Get the SH coefficients from Light Volumes
-            float3 lvL0, lvL1r, lvL1g, lvL1b;
-            LightVolumeSH(worldPos, lvL0, lvL1r, lvL1g, lvL1b);
-            
-            // Extract dominant direction from L1 coefficients
-            // Light Volumes adds all L1 components together to get the dominant direction
-            // (see LightVolumeSpecularDominant in LightVolumes.cginc)
-            half3 lightDir = normalize(lvL1r + lvL1g + lvL1b);
-            
-            if (length(lightDir) > 0.001)
-            {
-                ctx.lightDir = lightDir;
-                ctx.viewDir = normalize(_WorldSpaceCameraPos - worldPos);
-                ctx.lightColor = lvL0;
-                ctx.lightAtten = 1.0; // Light volumes have no distance attenuation
-                
-                // Populate vectors
-                GzPopulateLightingVectors(ctx, normal);
-            }
-        }
-    #endif
-    
-    return ctx;
-}
 
 // Create lighting context for point/spot lights (ForwardAdd)
 GzLightingContext GzCreateAdditiveLightContext(GzVertexOutputAdd i, half3 normal)
@@ -221,16 +176,31 @@ half3 GzGetVertexLights(GzVertexOutput i, half3 albedo, half metallic)
 // Environment Luminance Calculation
 // ============================================
 
-// Calculate average environment luminance from reflection probe
+// Calculate average environment luminance from blended reflection probes
 half GzGetAverageEnvironmentLuminance()
 {
-    // Sample lowest mip level at multiple directions for average - use _FallbackMaxMipLevel like original
-    half3 up = DecodeHDR(UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, half3(0,1,0), _FallbackMaxMipLevel), unity_SpecCube0_HDR);
-    half3 down = DecodeHDR(UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, half3(0,-1,0), _FallbackMaxMipLevel), unity_SpecCube0_HDR);
-    half3 center = DecodeHDR(UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, half3(0,0,1), _FallbackMaxMipLevel), unity_SpecCube0_HDR);
-    
-    // Calculate average and convert to luminance
-    half3 avgColor = (up + down + center) / 3.0;
+    half mip = _FallbackMaxMipLevel;
+
+    // Sample probe 0 at lowest mip in multiple directions
+    half3 avg0 = DecodeHDR(UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, half3(0,1,0), mip), unity_SpecCube0_HDR);
+    avg0 += DecodeHDR(UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, half3(0,-1,0), mip), unity_SpecCube0_HDR);
+    avg0 += DecodeHDR(UNITY_SAMPLE_TEXCUBE_LOD(unity_SpecCube0, half3(0,0,1), mip), unity_SpecCube0_HDR);
+    half3 avgColor = avg0 / 3.0;
+
+    // Blend with probe 1 using Unity's blend weight so fallback decisions
+    // track the actual blended probe result during transitions
+    #ifdef UNITY_SPECCUBE_BLENDING
+        half blendWeight = unity_SpecCube0_BoxMin.w;
+        UNITY_BRANCH
+        if (blendWeight < 0.99999)
+        {
+            half3 avg1 = DecodeHDR(UNITY_SAMPLE_TEXCUBE_SAMPLER_LOD(unity_SpecCube1, unity_SpecCube0, half3(0,1,0), mip), unity_SpecCube1_HDR);
+            avg1 += DecodeHDR(UNITY_SAMPLE_TEXCUBE_SAMPLER_LOD(unity_SpecCube1, unity_SpecCube0, half3(0,-1,0), mip), unity_SpecCube1_HDR);
+            avg1 += DecodeHDR(UNITY_SAMPLE_TEXCUBE_SAMPLER_LOD(unity_SpecCube1, unity_SpecCube0, half3(0,0,1), mip), unity_SpecCube1_HDR);
+            avgColor = lerp(avg1 / 3.0, avgColor, blendWeight);
+        }
+    #endif
+
     return dot(avgColor, half3(0.299, 0.587, 0.114));
 }
 
@@ -381,17 +351,18 @@ half3 GzParallaxCorrectReflection(half3 reflectionDir, float3 worldPos)
 }
 
 // Get indirect specular with environment-aware fallback
-half3 GzGetIndirectSpecular(half3 reflectionDir, half roughness, float3 worldPos,
-                            half avgEnvLuminance, half occlusion)
+// Uses per-pixel blended probe luminance for fallback decisions so transitions
+// between probes and fallback are smooth (matches GzSampleEnvironment approach)
+half3 GzGetIndirectSpecular(half3 reflectionDir, half roughness, float3 worldPos, half occlusion)
 {
     #ifdef USE_ENVIRONMENT_REFLECTION
-        // Set up Unity's GI input data
+        // Set up Unity's GI input data (matches Standard's FragmentGI exactly)
         UnityGIInput d;
         d.worldPos = worldPos;
         d.probeHDR[0] = unity_SpecCube0_HDR;
         d.probeHDR[1] = unity_SpecCube1_HDR;
         #if defined(UNITY_SPECCUBE_BLENDING) || defined(UNITY_SPECCUBE_BOX_PROJECTION)
-          d.boxMin[0] = unity_SpecCube0_BoxMin;
+          d.boxMin[0] = unity_SpecCube0_BoxMin; // .w holds lerp value for blending
         #endif
         #ifdef UNITY_SPECCUBE_BOX_PROJECTION
           d.boxMax[0] = unity_SpecCube0_BoxMax;
@@ -400,25 +371,26 @@ half3 GzGetIndirectSpecular(half3 reflectionDir, half roughness, float3 worldPos
           d.boxMin[1] = unity_SpecCube1_BoxMin;
           d.probePosition[1] = unity_SpecCube1_ProbePosition;
         #endif
-        
+
         Unity_GlossyEnvironmentData g;
         g.roughness = roughness;
         g.reflUVW = reflectionDir;
-        
-        // Use Unity's indirect specular function (we'll apply our own occlusion)
-        half3 envSample = UnityGI_IndirectSpecular(d, 1.0, g);
-        
-        // Use the cached average environment luminance for consistent fallback decisions
-        if (avgEnvLuminance < _ReflectionProbeThreshold)
+
+        // UnityGI_IndirectSpecular handles probe blending internally via boxMin[0].w
+        half3 envSample = UnityGI_IndirectSpecular(d, occlusion, g);
+
+        // Per-pixel fallback: check the actual blended probe result this pixel sees
+        half probeLuminance = dot(envSample, half3(0.299, 0.587, 0.114));
+        if (probeLuminance < _ReflectionProbeThreshold)
         {
-            // Apply box projection to fallback cubemap as well
-            half3 fallbackDir = GzParallaxCorrectReflection(reflectionDir, worldPos);
+            // Fallback cubemap is a distant environment — use raw reflection direction
+            // (no box projection; that's only for local probes)
             half mipLevel = roughness * _FallbackMaxMipLevel;
-            half3 fallbackSpecular = texCUBElod(_FallbackCubemap, half4(fallbackDir, mipLevel)).rgb * _FallbackIntensity;
-            half fallbackBlend = saturate((_ReflectionProbeThreshold - avgEnvLuminance) / _ReflectionProbeThreshold);
+            half3 fallbackSpecular = texCUBElod(_FallbackCubemap, half4(reflectionDir, mipLevel)).rgb * _FallbackIntensity;
+            half fallbackBlend = saturate((_ReflectionProbeThreshold - probeLuminance) / _ReflectionProbeThreshold);
             envSample = lerp(envSample, fallbackSpecular, fallbackBlend);
         }
-        
+
         return envSample;
     #else
         return half3(0, 0, 0);
@@ -453,29 +425,6 @@ struct GzIndirectLight
 };
 
 
-// Get Light Volumes ambient diffuse contribution
-#ifdef USE_VRC_LIGHT_VOLUMES
-half3 GzGetLightVolumeAmbient(float3 worldPos, half3 normal)
-{
-    if (LightVolumesEnabled())
-    {
-        // Get the SH coefficients from Light Volumes
-        float3 lvL0, lvL1r, lvL1g, lvL1b;
-        LightVolumeSH(worldPos, lvL0, lvL1r, lvL1g, lvL1b);
-        
-        // Evaluate SH manually like we do elsewhere
-        // L0 is the ambient term, L1 provides directional variation
-        half3 result;
-        result.r = lvL0.r + dot(lvL1r, normal);
-        result.g = lvL0.g + dot(lvL1g, normal);
-        result.b = lvL0.b + dot(lvL1b, normal);
-        
-        return max(0, result);
-    }
-    
-    return half3(0, 0, 0);
-}
-#endif
 
 // Gather all indirect lighting for ForwardBase (following Unity's approach)
 GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewDir, 
@@ -484,9 +433,6 @@ GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewD
     GzIndirectLight indirect;
     indirect.diffuse = half3(0, 0, 0);
     indirect.specular = half3(0, 0, 0);
-    
-    // Calculate average environment luminance once for all fallback decisions
-    half avgEnvLuminance = GzGetAverageEnvironmentLuminance();
     
     // Handle lightmaps like Unity does
     #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
@@ -533,7 +479,7 @@ GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewD
     
     // Get reflection with fallback
     half3 reflectionDir = reflect(-viewDir, normal);
-    indirect.specular = GzGetIndirectSpecular(reflectionDir, roughness, worldPos, avgEnvLuminance, occlusion);
+    indirect.specular = GzGetIndirectSpecular(reflectionDir, roughness, worldPos, occlusion);
     
     // Apply horizon occlusion to specular
     half horizon = GzHorizonOcclusion(normal, reflectionDir);
@@ -544,12 +490,11 @@ GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewD
     half specOcc = GzComputeSpecularOcclusion(NoV, occlusion, roughness);
     indirect.specular *= specOcc;
     
-    // Scale indirect specular by lightmap color on lightmapped surfaces
-    // This is an aesthetic choice to better integrate reflections with baked lighting
+    // Optionally blend indirect specular toward lightmap color on lightmapped surfaces
+    // _LightmapReflectionBlend = 0 (default) preserves full reflections (spec-correct)
+    // _LightmapReflectionBlend = 1 fully tints reflections by baked color (artistic)
     #ifdef LIGHTMAP_ON
-        // Directly multiply by lightmap color for artistic integration
-        // This breaks PBR rules but looks better in practice
-        indirect.specular *= bakedColor;
+        indirect.specular *= lerp(half3(1,1,1), bakedColor, _LightmapReflectionBlend);
     #endif
     
     return indirect;

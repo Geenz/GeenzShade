@@ -58,23 +58,6 @@ half GzIorToFresnel0(half transmittedIor, half incidentIor)
     return GzSqr((transmittedIor - incidentIor) / (transmittedIor + incidentIor));
 }
 
-// Helper to get thickness blend factor for smooth IOR transition
-half GzGetThicknessBlendFactor(half thickness, half minThickness, half maxThickness)
-{
-    // Use a smoother transition range based on the thickness parameters
-    half transitionStart = minThickness * 0.3; // 30% of min thickness
-    half transitionEnd = minThickness * 0.8;   // 80% of min thickness
-    return smoothstep(transitionStart, transitionEnd, thickness);
-}
-
-// Calculate wavelength-dependent phase for improved color accuracy
-half3 GzGetWavelengthPhase(half opd)
-{
-    // Representative wavelengths for RGB in nanometers (visible spectrum)
-    half3 wavelengths = half3(680.0, 550.0, 440.0); // Red, Green, Blue
-    return 2.0 * UNITY_PI * opd / wavelengths;
-}
-
 // Main iridescence evaluation function (exact official glTF implementation)
 half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFilmThickness, half3 baseF0)
 {
@@ -135,55 +118,6 @@ half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFil
 
     // Since out of gamut colors might be produced, negative color values are clamped to 0.
     return max(I, half3(0.0, 0.0, 0.0));
-}
-
-// DEPRECATED: These functions are kept for backward compatibility only
-// Iridescence is now applied automatically in GzSampleMaterialComplete()
-
-// Simple wrapper for backward compatibility
-half3 GzGetIridescentFresnel(half iridescenceFactor, half iridescenceIOR, half iridescenceThickness,
-                          half3 baseF0, half NoV)
-{
-    // For backward compatibility, still calculate iridescence here
-    if (iridescenceFactor <= 0.0)
-        return baseF0;
-    
-    half3 iridF0 = GzEvalIridescence(1.0, iridescenceIOR, NoV, iridescenceThickness, baseF0);
-    return lerp(baseF0, iridF0, iridescenceFactor);
-}
-
-// DEPRECATED: F0/F90 calculation is now centralized in GzMaterialSampling
-// This function is kept for backward compatibility only
-void GetIridescentFresnelSpecular(half iridescenceFactor, half iridescenceIOR, half iridescenceThickness,
-                                  half baseIOR, half specularFactor, half3 specularColorFactor,
-                                  half metallic, half3 baseColor, half NoV,
-                                  out half3 iridF0, out half3 iridF90)
-{
-    // For backward compatibility, still provide the calculation
-    // In new code, use GzSampleMaterialComplete which handles this automatically
-    
-    // Calculate base F0
-    half iorToF0 = (1.0 - baseIOR) / (1.0 + baseIOR);
-    iorToF0 = iorToF0 * iorToF0;
-    half3 baseF0 = iorToF0 * specularColorFactor * specularFactor;
-    baseF0 = min(baseF0, half3(1.0, 1.0, 1.0));
-    
-    // Override for metals
-    baseF0 = lerp(baseF0, baseColor, metallic);
-    half3 baseF90 = lerp(half3(specularFactor, specularFactor, specularFactor), half3(1, 1, 1), metallic);
-    
-    // Apply iridescence if present
-    if (iridescenceFactor > 0.0)
-    {
-        half3 iridescenceF0 = GzEvalIridescence(1.0, iridescenceIOR, NoV, iridescenceThickness, baseF0);
-        iridF0 = lerp(baseF0, iridescenceF0, iridescenceFactor);
-        iridF90 = baseF90; // F90 unchanged per glTF spec
-    }
-    else
-    {
-        iridF0 = baseF0;
-        iridF90 = baseF90;
-    }
 }
 
 #endif // GZ_IRIDESCENCE_INCLUDED
