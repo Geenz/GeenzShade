@@ -12,8 +12,9 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
+  - USE_CLEARCOAT
   - USE_ENVIRONMENT_REFLECTION
-  - USE_SHEEN
+  - USE_SSR
   - VERTEXLIGHT_ON
   - _RENDERMODE_OPAQUE
   - _SHDOMINANTLIGHT_ON
@@ -24,7 +25,8 @@ Material:
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap: {}
+  stringTagMap:
+    RenderType: Opaque
   disabledShaderPasses: []
   m_LockedProperties: 
   m_SavedProperties:
@@ -116,7 +118,7 @@ Material:
     - _BumpScale: 1
     - _ClearcoatFactor: 1
     - _ClearcoatNormalScale: 1
-    - _ClearcoatRoughness: 0.2
+    - _ClearcoatRoughness: 0.485
     - _Cull: 2
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
@@ -144,9 +146,16 @@ Material:
     - _Parallax: 0.02
     - _ReflectionProbeThreshold: 0.1
     - _RenderMode: 0
-    - _Roughness: 1
+    - _Roughness: 0
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
+    - _SSRBinarySteps: 4.101
+    - _SSREdgeFade: 0.2171
+    - _SSRIntensity: 1
+    - _SSRMaxDistance: 1.27
+    - _SSRMaxRoughness: 1
+    - _SSRStepCount: 64
+    - _SSRThickness: 0.269
     - _SheenFactor: 1
     - _SheenRimBoost: 4.47
     - _SheenRoughness: 0.588
@@ -159,7 +168,7 @@ Material:
     - _SrcBlend: 1
     - _UVSec: 0
     - _UseBaseColorTexture: 1
-    - _UseClearcoat: 0
+    - _UseClearcoat: 1
     - _UseClearcoatIridescenceTexture: 0
     - _UseClearcoatNormalTexture: 0
     - _UseDiffuseTransmission: 0
@@ -170,7 +179,8 @@ Material:
     - _UseMROTexture: 1
     - _UseNormalTexture: 0
     - _UseORMTexture: 1
-    - _UseSheen: 1
+    - _UseSSR: 1
+    - _UseSheen: 0
     - _UseSheenTexture: 0
     - _UseSpecularAntialiasing: 0
     - _UseSpecularExtension: 0
@@ -180,7 +190,7 @@ Material:
     - _ZTest: 4
     - _ZWrite: 1
     m_Colors:
-    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _Color: {r: 0, g: 0, b: 0, a: 1}
     - _DiffuseTransmissionColorFactor: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _EmissiveFactor: {r: 0, g: 0, b: 0, a: 1}

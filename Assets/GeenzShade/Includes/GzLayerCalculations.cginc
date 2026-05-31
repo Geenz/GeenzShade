@@ -88,7 +88,7 @@ half3 GzCalculateBaseBRDF(GzMaterialData matData, GzLightingContext ctx, half3 F
 // Note: NoL is NOT included in the BRDF, it's applied during layering
 half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
 {
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Fixed F0 for clearcoat (IOR = 1.5, F0 = ((1-1.5)/(1+1.5))^2 = 0.04)
@@ -121,7 +121,7 @@ half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
 // Per spec: coated_emission = emission * (1 - clearcoat * clearcoat_fresnel)
 half3 GzAttenuateEmissionByClearcoat(half3 emission, GzMaterialData matData, half3 viewDir)
 {
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Calculate clearcoat Fresnel
@@ -170,7 +170,7 @@ half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingConte
 half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
 {
     // Populate clearcoat vectors (always needed for clearcoat layer)
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     GzPopulateClearcoatVectors(ctx, matData.clearcoatNormal);
 #endif
     
@@ -181,7 +181,7 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
     
     // Step 3: Apply sheen albedo scaling to base color if needed
     half3 scaledBaseColor = matData.baseColor;
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         half albedoScaling = GzCalculateSheenAlbedoScaling(matData, ctx);
@@ -198,10 +198,15 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
     matData.baseColor = originalBaseColor; // Restore original
     
     // Step 4: Add sheen layer on top
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0 && ctx.NoL > 0)
     {
-        half3 sheenBRDF = GzCalculateSheen(matData, ctx);
+        // Exact sheen visibility at Tier 0, cheap cloth visibility at Tier 1-2
+        #ifdef GZ_APPROX_SHEEN
+            half3 sheenBRDF = GzCalculateSheenApprox(matData, ctx);
+        #else
+            half3 sheenBRDF = GzCalculateSheen(matData, ctx);
+        #endif
         baseBRDF = baseBRDF + sheenBRDF;
     }
 #endif
@@ -217,7 +222,7 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
 #endif
     
     // Step 5: Apply clearcoat layer on top (if present)
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         // Calculate clearcoat BRDF (without NoL)
@@ -273,7 +278,7 @@ half3 GzCalculateBaseIndirect(GzMaterialData matData, GzLightingContext ctx,
 // Calculate sheen indirect contribution
 half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, half3 envDiffuse, half3 envSpecular)
 {
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         // For sheen IBL, we need to approximate the Charlie BRDF response
@@ -308,7 +313,7 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
 {
     // Apply sheen albedo scaling to base color if needed
     half3 originalBaseColor = matData.baseColor;
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         half albedoScaling = GzCalculateSheenAlbedoScalingIndirect(matData, ctx.NoV);
@@ -324,7 +329,7 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
     result *= matData.occlusion;
     
 // Add sheen indirect on top
-#ifdef USE_SHEEN
+#ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
         half3 sheenIndirect = GzCalculateSheenIndirect(matData, ctx, indirectDiffuse, indirectSpecular);
@@ -333,7 +338,7 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
 #endif
 
 // Clearcoat indirect with pre-sampled environment
-#ifdef USE_CLEARCOAT
+#ifdef GZ_USE_CLEARCOAT
     if (matData.clearcoatFactor > 0)
     {
         half ccNoV = saturate(dot(matData.clearcoatNormal, ctx.viewDir));

@@ -18,6 +18,7 @@
 #include "GzPassHelpers.cginc"
 #include "GzProperties.cginc"
 #include "GzSH.cginc"
+#include "GzSSR.cginc"
 
 // VRC Light Volumes support (include early for function availability)
 #ifdef USE_VRC_LIGHT_VOLUMES
@@ -480,7 +481,7 @@ GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewD
     // Get reflection with fallback
     half3 reflectionDir = reflect(-viewDir, normal);
     indirect.specular = GzGetIndirectSpecular(reflectionDir, roughness, worldPos, occlusion);
-    
+
     // Apply horizon occlusion to specular
     half horizon = GzHorizonOcclusion(normal, reflectionDir);
     indirect.specular *= horizon;

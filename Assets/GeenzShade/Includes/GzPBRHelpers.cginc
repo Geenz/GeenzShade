@@ -115,28 +115,4 @@ half GzMapIridescenceThickness(half normalizedThickness, half thicknessMin, half
     return lerp(thicknessMin, thicknessMax, normalizedThickness);
 }
 
-// ============================================
-// Validation Helpers
-// ============================================
-
-// Clamp F0 to valid range
-half3 GzClampF0(half3 f0)
-{
-    return min(f0, half3(1.0, 1.0, 1.0));
-}
-
-// Validate material properties
-void GzValidateMaterial(inout GzMaterialData data)
-{
-    data.metallic = saturate(data.metallic);
-    data.roughness = saturate(data.roughness);
-    data.occlusion = saturate(data.occlusion);
-    data.alpha = saturate(data.alpha);
-    data.f0 = GzClampF0(data.f0);
-    data.clearcoatFactor = saturate(data.clearcoatFactor);
-    data.clearcoatRoughness = saturate(data.clearcoatRoughness);
-    data.iridescenceFactor = saturate(data.iridescenceFactor);
-    data.specularFactor = saturate(data.specularFactor);
-}
-
 #endif // GZ_PBR_HELPERS_INCLUDED

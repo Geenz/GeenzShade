@@ -99,21 +99,21 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     #ifdef USE_CLEARCOAT_IRIDESCENCE_TEXTURE
         float2 uvClearcoatIrid = GzTransformUV(baseUV, _ClearcoatIridescenceTexture_ST);
         half4 clearcoatIridescence = tex2D(_ClearcoatIridescenceTexture, uvClearcoatIrid);
-        #ifdef USE_CLEARCOAT
+        #ifdef GZ_USE_CLEARCOAT
             matData.clearcoatFactor = clearcoatIridescence.r * _ClearcoatFactor;
             matData.clearcoatRoughness = clearcoatIridescence.g * _ClearcoatRoughness;
         #endif
-        #ifdef USE_IRIDESCENCE
+        #ifdef GZ_USE_IRIDESCENCE
             matData.iridescenceFactor = clearcoatIridescence.b * _IridescenceFactor;
             half thicknessSample = clearcoatIridescence.a * _IridescenceThickness;
             matData.iridescenceThickness = lerp(_IridescenceThicknessMin, _IridescenceThicknessMax, thicknessSample);
         #endif
     #else
-        #ifdef USE_CLEARCOAT
+        #ifdef GZ_USE_CLEARCOAT
             matData.clearcoatFactor = _ClearcoatFactor;
             matData.clearcoatRoughness = _ClearcoatRoughness;
         #endif
-        #ifdef USE_IRIDESCENCE
+        #ifdef GZ_USE_IRIDESCENCE
             matData.iridescenceFactor = _IridescenceFactor;
             matData.iridescenceThickness = lerp(_IridescenceThicknessMin, _IridescenceThicknessMax, _IridescenceThickness);
         #endif
@@ -122,7 +122,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     matData.iridescenceIOR = _IridescenceIOR;
     
     // Sheen
-    #ifdef USE_SHEEN
+    #ifdef GZ_USE_SHEEN
         #ifdef USE_SHEEN_TEXTURE
             float2 uvSheen = GzTransformUV(baseUV, _SheenTexture_ST);
             half4 sheenSample = tex2D(_SheenTexture, uvSheen);
@@ -175,7 +175,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
 // Apply iridescence to F0 (must be called after normal is set)
 void GzApplyIridescenceToF0(inout GzMaterialData matData, half NoV)
 {
-    #ifdef USE_IRIDESCENCE
+    #ifdef GZ_USE_IRIDESCENCE
     if (matData.iridescenceFactor > 0)
     {
         // For iridescence calculation, we need to pass the correct F0:
@@ -197,9 +197,14 @@ void GzApplyIridescenceToF0(inout GzMaterialData matData, half NoV)
         }
         #endif
         
-        // Calculate iridescent F0
-        half3 iridF0 = GzEvalIridescence(1.0, matData.iridescenceIOR, NoV, 
-                                      matData.iridescenceThickness, iridescenceInputF0);
+        // Calculate iridescent F0 (exact at Tier 0, cheap approximation at Tier 1-2)
+        #ifdef GZ_APPROX_IRIDESCENCE
+            half3 iridF0 = GzEvalIridescenceApprox(matData.iridescenceIOR, NoV,
+                                          matData.iridescenceThickness, iridescenceInputF0);
+        #else
+            half3 iridF0 = GzEvalIridescence(1.0, matData.iridescenceIOR, NoV,
+                                          matData.iridescenceThickness, iridescenceInputF0);
+        #endif
         
         // Apply iridescence with proper mixing
         #ifdef USE_SPECULAR_EXTENSION
@@ -254,7 +259,7 @@ void GzApplyNormalMaps(inout GzMaterialData matData, float2 baseUV, half3x3 tbn)
     #endif
     
     // Clearcoat normal
-    #ifdef USE_CLEARCOAT
+    #ifdef GZ_USE_CLEARCOAT
         #ifdef USE_CLEARCOAT_NORMAL_TEXTURE
             float2 uvClearcoatNormal = GzTransformUV(baseUV, _ClearcoatNormalTexture_ST);
             half4 clearcoatNormalSample = tex2D(_ClearcoatNormalTexture, uvClearcoatNormal);
@@ -291,7 +296,7 @@ GzMaterialData GzSampleMaterialComplete(float2 baseUV, half3x3 tbn, half3 viewDi
     matData.roughness = ApplySpecularAntialiasing(matData.roughness, NoV, worldPos);
     
     // Also apply to clearcoat roughness if clearcoat is enabled
-    #ifdef USE_CLEARCOAT
+    #ifdef GZ_USE_CLEARCOAT
         half clearcoatNoV = saturate(dot(matData.clearcoatNormal, viewDir));
         matData.clearcoatRoughness = ApplySpecularAntialiasing(matData.clearcoatRoughness, clearcoatNoV, worldPos);
     #endif

@@ -71,8 +71,24 @@ half3 GzCalculateSheen(GzMaterialData matData, GzLightingContext ctx)
 {
     half D = GzD_Charlie(matData.sheenRoughness, ctx.NoH);
     half V = GzV_Sheen(ctx.NoL, ctx.NoV, matData.sheenRoughness);
-    
+
     // Apply sheen factor and rim boost
+    return matData.sheenColor * D * V * matData.sheenFactor * matData.sheenRimBoost;
+}
+
+// Cheap cloth visibility (Ashikhmin/Neubelt) for lower quality tiers.
+// Replaces the numeric Lambda-based GzV_Sheen (two exp + pow evaluations)
+// with a single reciprocal. Keeps the Charlie distribution for the lobe shape.
+half GzV_SheenApprox(half NoL, half NoV, half sheenRoughness)
+{
+    return saturate(0.25 * GzRcp(NoL + NoV - NoL * NoV));
+}
+
+// Approximate sheen BRDF for lower quality tiers (GZ_APPROX_SHEEN).
+half3 GzCalculateSheenApprox(GzMaterialData matData, GzLightingContext ctx)
+{
+    half D = GzD_Charlie(matData.sheenRoughness, ctx.NoH);
+    half V = GzV_SheenApprox(ctx.NoL, ctx.NoV, matData.sheenRoughness);
     return matData.sheenColor * D * V * matData.sheenFactor * matData.sheenRimBoost;
 }
 

@@ -120,4 +120,30 @@ half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFil
     return max(I, half3(0.0, 0.0, 0.0));
 }
 
+// Cheap thin-film approximation for lower quality tiers (GZ_APPROX_IRIDESCENCE).
+// Replaces the full Fourier sensitivity evaluation above with an analytic
+// per-channel interference cosine. Outside IOR is assumed to be 1.0, matching
+// the exact path's first argument. Returns an iridescent F0-like reflectance
+// the caller mixes over the base F0 by iridescenceFactor.
+half3 GzEvalIridescenceApprox(half eta2, half cosTheta1, half thinFilmThickness, half3 baseF0)
+{
+    // Snell refraction into the film (outside IOR = 1.0)
+    half sinTheta2Sq = GzSqr(1.0 / eta2) * (1.0 - GzSqr(cosTheta1));
+    half cosTheta2 = sqrt(saturate(1.0 - sinTheta2Sq));
+
+    // Optical path difference through the film (nanometres)
+    half opd = 2.0 * eta2 * thinFilmThickness * cosTheta2;
+
+    // Per-channel interference using representative RGB wavelengths (nm).
+    // +PI accounts for the reflection phase shift at the top interface.
+    const half3 invWavelength = half3(1.0 / 650.0, 1.0 / 550.0, 1.0 / 450.0);
+    half3 phase = (2.0 * UNITY_PI) * opd * invWavelength + UNITY_PI;
+    half3 interference = 0.5 + 0.5 * cos(phase);
+
+    // Thin films boost reflectance toward grazing; blend the rainbow over base F0.
+    half grazing = GzPow5(saturate(1.0 - cosTheta1));
+    half mixAmount = saturate(0.25 + 0.6 * grazing);
+    return lerp(baseF0, interference, mixAmount);
+}
+
 #endif // GZ_IRIDESCENCE_INCLUDED
