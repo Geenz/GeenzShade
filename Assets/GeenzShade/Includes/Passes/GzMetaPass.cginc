@@ -18,6 +18,8 @@
 #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
 #pragma shader_feature_local USE_ORM_TEXTURE
 #pragma shader_feature_local USE_EMISSIVE_TEXTURE
+#pragma shader_feature_local USE_TEXTURE_ARRAYS
+#pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
 #pragma shader_feature EDITOR_VISUALIZATION
 
 #include "UnityCG.cginc"
@@ -33,6 +35,9 @@ struct v2f_meta
     #ifdef EDITOR_VISUALIZATION
         float2 vizUV        : TEXCOORD1;
         float4 lightCoord   : TEXCOORD2;
+    #endif
+    #ifdef USE_TEXTURE_ARRAYS
+        nointerpolation float arraySlice : TEXCOORD3; // per-vertex array slice (flat)
     #endif
 };
 
@@ -52,8 +57,11 @@ v2f_meta vert_meta(GzVertexInput v)
     o.pos = UnityMetaVertexPosition(v.vertex, v.uv1, v.uv2, unity_LightmapST, unity_DynamicLightmapST);
 
     // Use same UV transformation as main shader
-    o.uv.xy = GzTransformUV(v.uv, _BaseColorTexture_ST);
+    o.uv.xy = GzTransformUV(v.uv, GZ_TEX_ST(_BaseColorTexture));
     o.uv.zw = 0;
+    #ifdef USE_TEXTURE_ARRAYS
+        o.arraySlice = GZ_RESOLVE_SLICE(v);
+    #endif
 
     #ifdef EDITOR_VISUALIZATION
         o.vizUV = 0;
@@ -72,10 +80,16 @@ v2f_meta vert_meta(GzVertexInput v)
 
 float4 frag_meta(v2f_meta i) : SV_Target
 {
+    #ifdef USE_TEXTURE_ARRAYS
+        float metaSlice = i.arraySlice;
+    #else
+        float metaSlice = 0;
+    #endif
+
     // Sample base color
     half3 albedo = _Color.rgb;
     #ifdef USE_BASE_COLOR_TEXTURE
-        albedo *= tex2D(_BaseColorTexture, i.uv.xy).rgb;
+        albedo *= GZ_SAMPLE_TEX(_BaseColorTexture, i.uv.xy, metaSlice).rgb;
     #endif
 
     // Sample metallic and roughness from ORM texture
@@ -83,7 +97,7 @@ float4 frag_meta(v2f_meta i) : SV_Target
     half roughness = _Roughness;
 
     #ifdef USE_ORM_TEXTURE
-        half3 orm = tex2D(_ORMTexture, i.uv.xy).rgb;
+        half3 orm = GZ_SAMPLE_TEX(_ORMTexture, i.uv.xy, metaSlice).rgb;
         roughness = orm.g * _Roughness;  // G = Roughness
         metallic = orm.b * _Metallic;    // B = Metallic
     #endif
@@ -97,7 +111,7 @@ float4 frag_meta(v2f_meta i) : SV_Target
     // Sample emission
     half3 emission = _EmissiveFactor.rgb * _EmissionStrength;
     #ifdef USE_EMISSIVE_TEXTURE
-        emission *= tex2D(_EmissiveTexture, i.uv.xy).rgb;
+        emission *= GZ_SAMPLE_TEX(_EmissiveTexture, i.uv.xy, metaSlice).rgb;
     #endif
 
     // Setup meta input

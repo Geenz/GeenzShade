@@ -24,6 +24,9 @@ struct GzVertexInput
     float2 uv : TEXCOORD0;
     float2 uv1 : TEXCOORD1;     // Always include UV1 for lightmaps (matches Unity Standard)
     float2 uv2 : TEXCOORD2;     // Always include UV2 for dynamic lightmaps
+    #ifdef USE_TEXTURE_ARRAYS
+        float2 texArraySlice : TEXCOORD3; // .x = per-vertex texture-array slice index
+    #endif
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
@@ -39,7 +42,10 @@ struct GzVertexOutput
     UNITY_LIGHTING_COORDS(6,7)
     float4 screenPos : TEXCOORD8;          // Screen position for depth fade
     float3 worldPos : TEXCOORD9;           // World position
-    
+    #ifdef USE_TEXTURE_ARRAYS
+        nointerpolation float arraySlice : TEXCOORD10; // per-vertex array slice (flat)
+    #endif
+
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
 };
@@ -56,7 +62,10 @@ struct GzVertexOutputAdd
     float3 worldPos : TEXCOORD5;
     UNITY_LIGHTING_COORDS(6, 7)
     float4 screenPos : TEXCOORD8;          // Screen position for depth fade
-    
+    #ifdef USE_TEXTURE_ARRAYS
+        nointerpolation float arraySlice : TEXCOORD10; // per-vertex array slice (flat)
+    #endif
+
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
 };
@@ -79,6 +88,9 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
     o.uv = v.uv; // Transform will be applied based on which texture is being sampled
     o.worldPos = posWorld.xyz;
     o.eyeVec.xyz = normalize(posWorld.xyz - _WorldSpaceCameraPos);
+    #ifdef USE_TEXTURE_ARRAYS
+        o.arraySlice = GZ_RESOLVE_SLICE(v);
+    #endif
     
     // Build TBN matrix
     half3 wNormal = UnityObjectToWorldNormal(v.normal);
@@ -137,13 +149,16 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
     o.uv = v.uv;
     o.worldPos = posWorld.xyz;
     o.eyeVec.xyz = normalize(posWorld.xyz - _WorldSpaceCameraPos);
-    
+    #ifdef USE_TEXTURE_ARRAYS
+        o.arraySlice = GZ_RESOLVE_SLICE(v);
+    #endif
+
     // Build TBN matrix
     half3 wNormal = UnityObjectToWorldNormal(v.normal);
     half3 wTangent = UnityObjectToWorldDir(v.tangent.xyz);
     half tangentSign = v.tangent.w * unity_WorldTransformParams.w;
     half3 wBitangent = cross(wNormal, wTangent) * tangentSign;
-    
+
     // Calculate light direction (exactly like Unity Standard shader)
     float3 lightDir = _WorldSpaceLightPos0.xyz - o.worldPos * _WorldSpaceLightPos0.w;
     #ifndef USING_DIRECTIONAL_LIGHT

@@ -90,7 +90,7 @@ GzMaterialData GzCreateMaterialData()
     
     data.diffuseTransmissionFactor = 0;
     data.diffuseTransmissionColorFactor = half3(1, 1, 1);
-    
+
     return data;
 }
 

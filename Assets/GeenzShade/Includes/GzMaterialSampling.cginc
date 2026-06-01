@@ -41,15 +41,16 @@ half ApplySpecularAntialiasing(half roughness, half NoV, float3 worldPos)
     #endif
 }
 
-// Sample all material textures and populate GzMaterialData
-GzMaterialData GzSampleMaterial(float2 baseUV)
+// Sample all material textures and populate GzMaterialData.
+// arraySlice is the per-vertex texture-array layer (ignored unless USE_TEXTURE_ARRAYS).
+GzMaterialData GzSampleMaterial(float2 baseUV, float arraySlice)
 {
     GzMaterialData matData = GzCreateMaterialData();
-    
+
     // Base color
     #ifdef USE_BASE_COLOR_TEXTURE
-        float2 uvBaseColor = GzTransformUV(baseUV, _BaseColorTexture_ST);
-        half4 baseColorSample = tex2D(_BaseColorTexture, uvBaseColor);
+        float2 uvBaseColor = GzTransformUV(baseUV, GZ_TEX_ST(_BaseColorTexture));
+        half4 baseColorSample = GZ_SAMPLE_TEX(_BaseColorTexture, uvBaseColor, arraySlice);
         matData.baseColor = baseColorSample.rgb * _Color.rgb;
         matData.alpha = baseColorSample.a * _Color.a;
     #else
@@ -59,8 +60,8 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     
     // ORM (Occlusion, Roughness, Metallic)
     #ifdef USE_ORM_TEXTURE
-        float2 uvORM = GzTransformUV(baseUV, _ORMTexture_ST);
-        half3 orm = tex2D(_ORMTexture, uvORM).rgb;
+        float2 uvORM = GzTransformUV(baseUV, GZ_TEX_ST(_ORMTexture));
+        half3 orm = GZ_SAMPLE_TEX(_ORMTexture, uvORM, arraySlice).rgb;
         matData.occlusion = lerp(1.0, orm.r, _OcclusionStrength);  // R = Occlusion
         matData.roughness = orm.g * _Roughness;                    // G = Roughness
         matData.metallic = orm.b * _Metallic;                      // B = Metallic
@@ -72,8 +73,8 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     
     // Emissive
     #ifdef USE_EMISSIVE_TEXTURE
-        float2 uvEmissive = GzTransformUV(baseUV, _EmissiveTexture_ST);
-        matData.emissive = tex2D(_EmissiveTexture, uvEmissive).rgb * _EmissiveFactor.rgb;
+        float2 uvEmissive = GzTransformUV(baseUV, GZ_TEX_ST(_EmissiveTexture));
+        matData.emissive = GZ_SAMPLE_TEX(_EmissiveTexture, uvEmissive, arraySlice).rgb * _EmissiveFactor.rgb;
     #else
         matData.emissive = _EmissiveFactor.rgb;
     #endif
@@ -82,8 +83,8 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     // Specular extension
     #ifdef USE_SPECULAR_EXTENSION
         #ifdef USE_SPECULAR_TEXTURE
-            float2 uvSpecular = GzTransformUV(baseUV, _SpecularTexture_ST);
-            half4 specularSample = tex2D(_SpecularTexture, uvSpecular);
+            float2 uvSpecular = GzTransformUV(baseUV, GZ_TEX_ST(_SpecularTexture));
+            half4 specularSample = GZ_SAMPLE_TEX(_SpecularTexture, uvSpecular, arraySlice);
             matData.specularColor = specularSample.rgb * _SpecularColor.rgb;
             matData.specularFactor = specularSample.a * _SpecularFactor;
         #else
@@ -96,17 +97,17 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     #endif
     
     // Clearcoat and Iridescence
+    half iridThicknessNorm = 0; // normalized [0,1] thin-film thickness; resolved to nm after the aux blocks
     #ifdef USE_CLEARCOAT_IRIDESCENCE_TEXTURE
-        float2 uvClearcoatIrid = GzTransformUV(baseUV, _ClearcoatIridescenceTexture_ST);
-        half4 clearcoatIridescence = tex2D(_ClearcoatIridescenceTexture, uvClearcoatIrid);
+        float2 uvClearcoatIrid = GzTransformUV(baseUV, GZ_TEX_ST(_ClearcoatIridescenceTexture));
+        half4 clearcoatIridescence = GZ_SAMPLE_TEX(_ClearcoatIridescenceTexture, uvClearcoatIrid, arraySlice);
         #ifdef GZ_USE_CLEARCOAT
             matData.clearcoatFactor = clearcoatIridescence.r * _ClearcoatFactor;
             matData.clearcoatRoughness = clearcoatIridescence.g * _ClearcoatRoughness;
         #endif
         #ifdef GZ_USE_IRIDESCENCE
             matData.iridescenceFactor = clearcoatIridescence.b * _IridescenceFactor;
-            half thicknessSample = clearcoatIridescence.a * _IridescenceThickness;
-            matData.iridescenceThickness = lerp(_IridescenceThicknessMin, _IridescenceThicknessMax, thicknessSample);
+            iridThicknessNorm = clearcoatIridescence.a * _IridescenceThickness;
         #endif
     #else
         #ifdef GZ_USE_CLEARCOAT
@@ -115,7 +116,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
         #endif
         #ifdef GZ_USE_IRIDESCENCE
             matData.iridescenceFactor = _IridescenceFactor;
-            matData.iridescenceThickness = lerp(_IridescenceThicknessMin, _IridescenceThicknessMax, _IridescenceThickness);
+            iridThicknessNorm = _IridescenceThickness;
         #endif
     #endif
     
@@ -124,8 +125,8 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     // Sheen
     #ifdef GZ_USE_SHEEN
         #ifdef USE_SHEEN_TEXTURE
-            float2 uvSheen = GzTransformUV(baseUV, _SheenTexture_ST);
-            half4 sheenSample = tex2D(_SheenTexture, uvSheen);
+            float2 uvSheen = GzTransformUV(baseUV, GZ_TEX_ST(_SheenTexture));
+            half4 sheenSample = GZ_SAMPLE_TEX(_SheenTexture, uvSheen, arraySlice);
             matData.sheenColor = sheenSample.rgb * _SheenColor.rgb;
             matData.sheenFactor = _SheenFactor;  // Could be extended to use alpha channel if needed
             matData.sheenRoughness = sheenSample.a * _SheenRoughness;
@@ -140,9 +141,9 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
     // Diffuse Transmission
     #ifdef USE_DIFFUSE_TRANSMISSION
         #ifdef USE_DIFFUSE_TRANSMISSION_TEXTURE
-            float2 uvDiffTrans = GzTransformUV(baseUV, _DiffuseTransmissionTexture_ST);
+            float2 uvDiffTrans = GzTransformUV(baseUV, GZ_TEX_ST(_DiffuseTransmissionTexture));
             // Sample combined texture: RGB = color, A = factor
-            half4 transmissionSample = tex2D(_DiffuseTransmissionTexture, uvDiffTrans);
+            half4 transmissionSample = GZ_SAMPLE_TEX(_DiffuseTransmissionTexture, uvDiffTrans, arraySlice);
             matData.diffuseTransmissionFactor = transmissionSample.a * _DiffuseTransmissionFactor;
             matData.diffuseTransmissionColorFactor = transmissionSample.rgb * _DiffuseTransmissionColorFactor.rgb;
         #else
@@ -151,9 +152,49 @@ GzMaterialData GzSampleMaterial(float2 baseUV)
         #endif
     #endif
     
-    // Calculate F0 and F90 based on IOR and specular extension
     matData.ior = _IOR;
-    half3 baseF0 = GzGetF0FromIOR(_IOR);
+
+    // Auxiliary packed data texture (advanced). Replaces selected scalar params
+    // from a texture so many parameter variants batch under one material — pairs
+    // with the texture-array slice (a 1xN aux array encodes one param set per
+    // layer). Channels: R=IOR, G=Iridescence IOR, B=Face Cull (0=off, 0.5=back,
+    // 1=front), A=Sheen Rim Boost. The R/G/A remap ranges are material properties
+    // (_Aux*Min/_Aux*Max) so they match whatever the texture was baked with. Only
+    // the active features' params are touched.
+    // Sheen *factor* is intentionally NOT packed: it is mathematically identical
+    // to scaling the sheen colour (it only ever appears as sheenColor*sheenFactor,
+    // including in the albedo-scaling term), so vary per-variant sheen strength
+    // through the sheen colour/texture instead.
+    #ifdef USE_AUX_DATA
+        float2 uvAux = GzTransformUV(baseUV, GZ_TEX_ST(_AuxDataTexture));
+        half4 auxData = GZ_SAMPLE_TEX(_AuxDataTexture, uvAux, arraySlice);
+        matData.ior = lerp(_AuxIORMin, _AuxIORMax, auxData.r);
+        // Face cull (B) is decoded directly in each pass frag under
+        // _FACECULLSOURCE_TEXTURE, independent of this feature.
+        #ifdef GZ_USE_IRIDESCENCE
+            matData.iridescenceIOR = lerp(_AuxIridescenceIORMin, _AuxIridescenceIORMax, auxData.g);
+        #endif
+        #ifdef GZ_USE_SHEEN
+            matData.sheenRimBoost = lerp(_AuxSheenRimMin, _AuxSheenRimMax, auxData.a);
+        #endif
+    #endif
+
+    // Resolve thin-film thickness (nm) from the normalized sample. The min/max range
+    // is the material's, or a per-variant range from the second aux page when enabled.
+    #ifdef GZ_USE_IRIDESCENCE
+        half iridThickMin = _IridescenceThicknessMin;
+        half iridThickMax = _IridescenceThicknessMax;
+        #ifdef USE_AUX_THICKNESS
+            float2 uvAux2 = GzTransformUV(baseUV, GZ_TEX_ST(_AuxDataTexture2));
+            half2 auxThick = GZ_SAMPLE_TEX(_AuxDataTexture2, uvAux2, arraySlice).rg;
+            iridThickMin = lerp(_AuxThicknessRangeMin, _AuxThicknessRangeMax, auxThick.r);
+            iridThickMax = lerp(_AuxThicknessRangeMin, _AuxThicknessRangeMax, auxThick.g);
+        #endif
+        matData.iridescenceThickness = lerp(iridThickMin, iridThickMax, iridThicknessNorm);
+    #endif
+
+    // Calculate F0 and F90 based on IOR (post-aux) and specular extension
+    half3 baseF0 = GzGetF0FromIOR(matData.ior);
     
     // Apply specular extension to F0
     #ifdef USE_SPECULAR_EXTENSION
@@ -246,23 +287,23 @@ half3 GzUnpackNormalWithScale(half4 packednormal, half scale)
 }
 
 // Sample normals and apply to material data
-void GzApplyNormalMaps(inout GzMaterialData matData, float2 baseUV, half3x3 tbn)
+void GzApplyNormalMaps(inout GzMaterialData matData, float2 baseUV, half3x3 tbn, float arraySlice)
 {
     // Base normal
     #ifdef USE_NORMAL_TEXTURE
-        float2 uvNormal = GzTransformUV(baseUV, _NormalTexture_ST);
-        half4 normalSample = tex2D(_NormalTexture, uvNormal);
+        float2 uvNormal = GzTransformUV(baseUV, GZ_TEX_ST(_NormalTexture));
+        half4 normalSample = GZ_SAMPLE_TEX(_NormalTexture, uvNormal, arraySlice);
         half3 normalTS = GzUnpackNormalWithScale(normalSample, _NormalScale);
         matData.normal = normalize(mul(normalTS, tbn));
     #else
         matData.normal = normalize(tbn[2]); // Use world normal (third row of TBN)
     #endif
-    
+
     // Clearcoat normal
     #ifdef GZ_USE_CLEARCOAT
         #ifdef USE_CLEARCOAT_NORMAL_TEXTURE
-            float2 uvClearcoatNormal = GzTransformUV(baseUV, _ClearcoatNormalTexture_ST);
-            half4 clearcoatNormalSample = tex2D(_ClearcoatNormalTexture, uvClearcoatNormal);
+            float2 uvClearcoatNormal = GzTransformUV(baseUV, GZ_TEX_ST(_ClearcoatNormalTexture));
+            half4 clearcoatNormalSample = GZ_SAMPLE_TEX(_ClearcoatNormalTexture, uvClearcoatNormal, arraySlice);
             half3 clearcoatNormalTS = GzUnpackNormalWithScale(clearcoatNormalSample, _ClearcoatNormalScale);
             matData.clearcoatNormal = normalize(mul(clearcoatNormalTS, tbn));
         #else
@@ -274,11 +315,12 @@ void GzApplyNormalMaps(inout GzMaterialData matData, float2 baseUV, half3x3 tbn)
     #endif
 }
 
-// Convenience function to sample everything at once
-GzMaterialData GzSampleMaterialComplete(float2 baseUV, half3x3 tbn, half3 viewDir, float3 worldPos, bool isBackFace = false)
+// Convenience function to sample everything at once.
+// arraySlice is the per-vertex texture-array layer (ignored unless USE_TEXTURE_ARRAYS).
+GzMaterialData GzSampleMaterialComplete(float2 baseUV, half3x3 tbn, half3 viewDir, float3 worldPos, bool isBackFace = false, float arraySlice = 0)
 {
-    GzMaterialData matData = GzSampleMaterial(baseUV);
-    GzApplyNormalMaps(matData, baseUV, tbn);
+    GzMaterialData matData = GzSampleMaterial(baseUV, arraySlice);
+    GzApplyNormalMaps(matData, baseUV, tbn, arraySlice);
     
     // For back faces, flip the normal to face the viewer
     // This ensures iridescence is calculated correctly

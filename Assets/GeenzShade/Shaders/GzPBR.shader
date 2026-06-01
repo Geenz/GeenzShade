@@ -125,7 +125,43 @@ Shader "GeenzShade/GzPBR"
         [Toggle(USE_CLEARCOAT_IRIDESCENCE_TEXTURE)] _UseClearcoatIridescenceTexture ("Use Clearcoat/Iridescence Texture", Float) = 0
         [Toggle(USE_SHEEN_TEXTURE)] _UseSheenTexture ("Use Sheen Texture", Float) = 0
         [Toggle(USE_DIFFUSE_TRANSMISSION_TEXTURE)] _UseDiffuseTransmissionTexture ("Use Diffuse Transmission Texture", Float) = 0
-        
+
+        [Header(Texture Arrays (Advanced))]
+        [Toggle(USE_TEXTURE_ARRAYS)] _UseTextureArrays ("Use Texture Arrays", Float) = 0
+        [KeywordEnum(Vertex, MaterialInstance)] _ArrayIndexSource ("Array Index Source", Float) = 0
+        _ArraySlice ("Array Slice (Material Instance source)", Float) = 0
+        // Parallel Texture2DArray slots used when Use Texture Arrays is on. The
+        // per-vertex slice index is read from UV channel 3 (.x). These mirror the
+        // 2D input slots one-for-one.
+        _BaseColorTextureArray ("Base Color Array (RGB: Color, A: Alpha)", 2DArray) = "" {}
+        _ORMTextureArray ("ORM Array (R: Occ, G: Rough, B: Metal)", 2DArray) = "" {}
+        _NormalTextureArray ("Normal Array (Tangent Space)", 2DArray) = "" {}
+        _EmissiveTextureArray ("Emissive Array (RGB)", 2DArray) = "" {}
+        _SpecularTextureArray ("Specular Array (RGB: Color, A: Strength)", 2DArray) = "" {}
+        _ClearcoatNormalTextureArray ("Clearcoat Normal Array (Tangent Space)", 2DArray) = "" {}
+        _ClearcoatIridescenceTextureArray ("Clearcoat/Irid Array (R: CC, G: CC Rough, B: Irid, A: Thick)", 2DArray) = "" {}
+        _SheenTextureArray ("Sheen Array (RGB: Color, A: Roughness)", 2DArray) = "" {}
+        _DiffuseTransmissionTextureArray ("Transmission Array (RGB: Color, A: Factor)", 2DArray) = "" {}
+
+        [Header(Auxiliary Data (Advanced))]
+        [Toggle(USE_AUX_DATA)] _UseAuxData ("Use Auxiliary Data Texture", Float) = 0
+        _AuxDataTexture ("Aux Data (R: IOR, G: Irid IOR, B: Face Cull, A: Sheen Rim)", 2D) = "gray" {}
+        _AuxDataTextureArray ("Aux Data Array", 2DArray) = "" {}
+        // Decode ranges for the aux channels — must match what the texture was baked with.
+        _AuxIORMin ("Aux IOR Min", Float) = 0
+        _AuxIORMax ("Aux IOR Max", Float) = 4
+        _AuxIridescenceIORMin ("Aux Iridescence IOR Min", Float) = 0
+        _AuxIridescenceIORMax ("Aux Iridescence IOR Max", Float) = 4
+        _AuxSheenRimMin ("Aux Sheen Rim Min", Float) = 0
+        _AuxSheenRimMax ("Aux Sheen Rim Max", Float) = 10
+        // Second aux page: per-variant iridescence thickness range (R: min, G: max;
+        // B/A reserved). Stored normalized into _AuxThicknessRange (nanometers).
+        [Toggle(USE_AUX_THICKNESS)] _UseAuxThickness ("Use Aux Thickness Range", Float) = 0
+        _AuxDataTexture2 ("Aux Thickness (R: Thick Min, G: Thick Max)", 2D) = "black" {}
+        _AuxDataTexture2Array ("Aux Thickness Array", 2DArray) = "" {}
+        _AuxThicknessRangeMin ("Aux Thickness Range Min (nm)", Float) = 0
+        _AuxThicknessRangeMax ("Aux Thickness Range Max (nm)", Float) = 2000
+
         [Header(Advanced Options)]
         [KeywordEnum(Off, On)] _VertexLights ("Vertex Lights", Float) = 1
         [KeywordEnum(Off, On)] _SHDominantLight ("SH Dominant Light", Float) = 1
@@ -140,6 +176,10 @@ Shader "GeenzShade/GzPBR"
         _SpecularAACameraDistanceFalloff ("Specular AA Distance Falloff", Range(0, 100)) = 20
         
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull Mode", Float) = 2
+        [KeywordEnum(Hardware, Texture)] _FaceCullSource ("Face Cull Source", Float) = 0
+        // Artist cull intent preserved across the Texture-mode switch (which forces
+        // _Cull = Off for double-sided rendering). This is what the baker reads.
+        [HideInInspector] _FaceCullBake ("Baked Cull Intent", Float) = 2
         [HideInInspector] _ZWrite ("ZWrite", Float) = 1
         [HideInInspector] _ZTest ("ZTest", Float) = 4
         [HideInInspector] _SrcBlend ("Src Blend", Float) = 1

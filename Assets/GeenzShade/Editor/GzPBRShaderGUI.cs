@@ -134,8 +134,40 @@ namespace GeenzShade
             {
                 EditorGUI.indentLevel++;
 
+                // Face cull source: hardware fixed-function state vs per-variant
+                // in-shader culling driven by the Aux Data texture's B channel.
+                var cullSrcProp = FindProperty("_FaceCullSource", properties);
+                int cullSrc = cullSrcProp != null ? Mathf.RoundToInt(cullSrcProp.floatValue) : 0;
                 var cullProp = FindProperty("_Cull", properties);
-                if (cullProp != null)
+                var cullBakeProp = FindProperty("_FaceCullBake", properties); // artist intent, preserved
+                if (cullSrcProp != null)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Face Cull Source", "Hardware: fixed-function Cull state. Texture: render double-sided and cull per-variant in-shader (forward + shadow passes) from the Aux Data texture's B channel, so meshes with different cull modes can share one material. Forces Cull Off."),
+                        GUILayout.Width(EditorGUIUtility.labelWidth));
+                    int newCullSrc = EditorGUILayout.Popup(cullSrc, new[] { "Hardware", "Texture" });
+                    if (newCullSrc != cullSrc)
+                    {
+                        // Preserve the cull intent across the switch: _Cull is the render
+                        // state (forced Off in Texture mode for double-sided); _FaceCullBake
+                        // carries the intent the baker reads.
+                        if (newCullSrc == 1)
+                        {
+                            if (cullBakeProp != null && cullProp != null) cullBakeProp.floatValue = cullProp.floatValue;
+                            if (cullProp != null) cullProp.floatValue = (float)CullMode.Off;
+                        }
+                        else if (cullBakeProp != null && cullProp != null)
+                        {
+                            cullProp.floatValue = cullBakeProp.floatValue; // restore intent as render state
+                        }
+                        cullSrcProp.floatValue = newCullSrc;
+                        cullSrc = newCullSrc;
+                    }
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (cullSrc == 0 && cullProp != null)
                 {
                     EditorGUILayout.BeginHorizontal();
                     EditorGUILayout.LabelField("Culling", GUILayout.Width(EditorGUIUtility.labelWidth));
@@ -144,8 +176,31 @@ namespace GeenzShade
                     if (newCull != currentCull)
                     {
                         cullProp.floatValue = (float)newCull;
+                        if (cullBakeProp != null) cullBakeProp.floatValue = (float)newCull; // keep intent in sync
                     }
                     EditorGUILayout.EndHorizontal();
+                }
+                else if (cullSrc == 1)
+                {
+                    // Render is double-sided (_Cull = Off); this dropdown is the cull
+                    // intent the Aux Data Baker writes into the texture's B channel.
+                    if (cullBakeProp != null)
+                    {
+                        EditorGUILayout.BeginHorizontal();
+                        EditorGUILayout.LabelField(
+                            new GUIContent("Baked Cull", "The cull mode the Aux Data Baker packs into the aux texture's B channel for this material. Rendering stays double-sided; the shader discards the unwanted facing per-region. Re-bake after changing this."),
+                            GUILayout.Width(EditorGUIUtility.labelWidth));
+                        CullMode curBake = (CullMode)cullBakeProp.floatValue;
+                        CullMode newBake = (CullMode)EditorGUILayout.EnumPopup(curBake);
+                        if (newBake != curBake) cullBakeProp.floatValue = (float)newBake;
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    EditorGUILayout.HelpBox(
+                        "Culling is per-variant from the aux texture's B channel (0=Off, 0.5=Back, 1=Front), read directly — the " +
+                        "full Auxiliary Data feature need not be on. Assign an aux texture with cull packed in B (use the Aux Data " +
+                        "Baker, or enable Auxiliary Data Texture to set one). The material renders double-sided; cast shadows " +
+                        "respect this; lightmap (Meta) baking still renders double-sided. Per-pixel discard disables early-Z, " +
+                        "which is why this is an advanced opt-in.", MessageType.Info);
                 }
 
                 // Specular Antialiasing
@@ -257,6 +312,12 @@ namespace GeenzShade
                     material.renderQueue = newQueue;
                 EditorGUILayout.EndHorizontal();
 
+                EditorGUILayout.Space(5);
+                DrawTextureArrays(materialEditor, properties, material);
+
+                EditorGUILayout.Space(5);
+                DrawAuxData(materialEditor, properties, material);
+
                 EditorGUI.indentLevel--;
             }
         }
@@ -304,7 +365,7 @@ namespace GeenzShade
             EditorGUI.indentLevel++;
 
             // Base Color TEXTURE first, SEPARATE from color
-            var baseColorTextureProp = FindProperty("_BaseColorTexture", properties);
+            var baseColorTextureProp = FindTexProperty("_BaseColorTexture", properties);
             if (baseColorTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Base Color Texture (RGB=Color, A=Alpha)", "RGB: Albedo/diffuse color\nAlpha: Transparency/opacity"), baseColorTextureProp);
@@ -324,7 +385,7 @@ namespace GeenzShade
             }
 
             // ORM Texture
-            var ormTextureProp = FindProperty("_ORMTexture", properties);
+            var ormTextureProp = FindTexProperty("_ORMTexture", properties);
             if (ormTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("ORM Texture (R=Occlusion, G=Roughness, B=Metallic)", "Red: Ambient occlusion (0=occluded, 1=unoccluded)\nGreen: Roughness (0=glossy, 1=rough)\nBlue: Metallic (0=dielectric, 1=metal)"), ormTextureProp);
@@ -357,7 +418,7 @@ namespace GeenzShade
                 metallicFactorProp.floatValue = EditorGUILayout.Slider("Metallic Factor", metallicFactorProp.floatValue, 0f, 1f);
             }
 
-            var normalMapProp = FindProperty("_NormalTexture", properties);
+            var normalMapProp = FindTexProperty("_NormalTexture", properties);
             if (normalMapProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Normal Map (Tangent Space)", "Tangent-space normal map. Must be set to 'Normal map' type in texture import settings."), normalMapProp);
@@ -377,7 +438,7 @@ namespace GeenzShade
             }
 
             // Emissive TEXTURE separate
-            var emissiveTextureProp = FindProperty("_EmissiveTexture", properties);
+            var emissiveTextureProp = FindTexProperty("_EmissiveTexture", properties);
             if (emissiveTextureProp != null)
             {
                 materialEditor.TexturePropertySingleLine(new GUIContent("Emissive Texture (RGB=Glow Color)", "RGB: Emission color (multiplied by Emissive Factor)"), emissiveTextureProp);
@@ -459,7 +520,7 @@ namespace GeenzShade
                         clearcoatRoughnessProp.floatValue = EditorGUILayout.Slider("Clearcoat Roughness", clearcoatRoughnessProp.floatValue, 0f, 1f);
                     }
                     
-                    var clearcoatNormalTextureProp = FindProperty("_ClearcoatNormalTexture", properties);
+                    var clearcoatNormalTextureProp = FindTexProperty("_ClearcoatNormalTexture", properties);
                     if (clearcoatNormalTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat Normal (Tangent Space)", "Tangent-space normal map for clearcoat layer only"), clearcoatNormalTextureProp);
@@ -477,7 +538,7 @@ namespace GeenzShade
                         }
                     }
                     
-                    var clearcoatIridescenceTextureProp = FindProperty("_ClearcoatIridescenceTexture", properties);
+                    var clearcoatIridescenceTextureProp = FindTexProperty("_ClearcoatIridescenceTexture", properties);
                     if (clearcoatIridescenceTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat/Iridescence (R=Clear, G=Rough, B=Irid, A=Thick)", "Red: Clearcoat intensity (0=none, 1=full)\nGreen: Clearcoat roughness (0=glossy, 1=rough)\nBlue: Iridescence intensity (0=none, 1=full)\nAlpha: Iridescence thickness (0=min, 1=max)"), clearcoatIridescenceTextureProp);
@@ -522,7 +583,7 @@ namespace GeenzShade
                     EditorGUI.indentLevel++;
                     
                     // Clearcoat/Iridescence Texture FIRST in iridescence too!
-                    var clearcoatIridescenceTextureProp = FindProperty("_ClearcoatIridescenceTexture", properties);
+                    var clearcoatIridescenceTextureProp = FindTexProperty("_ClearcoatIridescenceTexture", properties);
                     if (clearcoatIridescenceTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Clearcoat/Iridescence (R=Clear, G=Rough, B=Irid, A=Thick)", "Red: Clearcoat intensity (0=none, 1=full)\nGreen: Clearcoat roughness (0=glossy, 1=rough)\nBlue: Iridescence intensity (0=none, 1=full)\nAlpha: Iridescence thickness (0=min, 1=max)"), clearcoatIridescenceTextureProp);
@@ -605,7 +666,7 @@ namespace GeenzShade
                 {
                     EditorGUI.indentLevel++;
                     
-                    var sheenTextureProp = FindProperty("_SheenTexture", properties);
+                    var sheenTextureProp = FindTexProperty("_SheenTexture", properties);
                     if (sheenTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Sheen Texture (RGB=Color, A=Roughness)", "RGB: Sheen color tint\nAlpha: Sheen roughness (0=smooth, 1=rough)"), sheenTextureProp);
@@ -687,7 +748,7 @@ namespace GeenzShade
                                 diffuseTransmissionFactorProp.floatValue, 0f, 1f);
                         }
                         
-                        var diffuseTransmissionTextureProp = FindProperty("_DiffuseTransmissionTexture", properties);
+                        var diffuseTransmissionTextureProp = FindTexProperty("_DiffuseTransmissionTexture", properties);
                         if (diffuseTransmissionTextureProp != null)
                         {
                             materialEditor.TexturePropertySingleLine(new GUIContent("Transmission Texture (RGB=Color, A=Amount)", "RGB: Color of transmitted light\nAlpha: Transmission amount (0=opaque, 1=fully transmissive)\nNote: Combines glTF diffuseTransmissionTexture and diffuseTransmissionColorTexture"), diffuseTransmissionTextureProp);
@@ -971,7 +1032,7 @@ namespace GeenzShade
                 {
                     EditorGUI.indentLevel++;
                     
-                    var specularTextureProp = FindProperty("_SpecularTexture", properties);
+                    var specularTextureProp = FindTexProperty("_SpecularTexture", properties);
                     if (specularTextureProp != null)
                     {
                         materialEditor.TexturePropertySingleLine(new GUIContent("Specular Texture (RGB=Color, A=Strength)", "RGB: Specular color tint (for dielectrics)\nAlpha: Specular strength multiplier"), specularTextureProp);
@@ -1007,6 +1068,167 @@ namespace GeenzShade
             var p = FindProperty(name, properties);
             if (p != null)
                 p.floatValue = EditorGUILayout.Slider(label, p.floatValue, min, max);
+        }
+
+        private void DrawAuxData(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            var useAuxProp = FindProperty("_UseAuxData", properties);
+            if (useAuxProp == null) return;
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                new GUIContent("Auxiliary Data Texture", "Packs scalar params not covered by the other textures (R: IOR, G: Iridescence IOR, B: Face Cull, A: Sheen Rim Boost) into one texture, so parameter variants can batch under a single material. Replaces those values while on (sheen factor is omitted — it equals scaling the sheen colour)."),
+                GUILayout.Width(EditorGUIUtility.labelWidth));
+            bool useAux = useAuxProp.floatValue > 0.5f;
+            bool newUseAux = EditorGUILayout.Toggle(useAux);
+            if (newUseAux != useAux)
+                useAuxProp.floatValue = newUseAux ? 1.0f : 0.0f;
+            EditorGUILayout.EndHorizontal();
+
+            if (newUseAux)
+            {
+                EditorGUI.indentLevel++;
+                var tex = FindTexProperty("_AuxDataTexture", properties);
+                if (tex != null)
+                {
+                    materialEditor.TexturePropertySingleLine(
+                        new GUIContent("Aux Data (R:IOR G:IridIOR B:FaceCull A:SheenRim)",
+                            "R: IOR (0-4). G: Iridescence IOR (0-4). B: Face Cull (0=off, 0.5=back, 1=front; requires Face Cull Source = Texture). A: Sheen Rim Boost (0-10)."), tex);
+                    if (tex.textureValue != null)
+                    {
+                        EditorGUI.indentLevel++;
+                        materialEditor.TextureScaleOffsetProperty(tex);
+                        EditorGUI.indentLevel--;
+                    }
+                }
+                EditorGUILayout.HelpBox(
+                    "Channels: R=IOR, G=Iridescence IOR, B=Face Cull (0=off, 0.5=back, 1=front), A=Sheen Rim Boost — decoded " +
+                    "per-vertex/instance slice when Texture Arrays are on. Iridescence and sheen channels only apply when those " +
+                    "features are on; B only acts when Face Cull Source = Texture. Sheen factor is omitted (equals scaling the " +
+                    "sheen colour).", MessageType.None);
+
+                EditorGUILayout.LabelField("Decode Ranges (Min, Max)", EditorStyles.miniBoldLabel);
+                EditorGUILayout.HelpBox("Must match the ranges the aux texture was baked with. The Aux Data Baker writes these for you. Keep Iridescence IOR Min ≥ 1 — a decoded value near 0 produces white iridescence artifacts.", MessageType.None);
+                DrawRangeProp(properties, "_AuxIORMin", "_AuxIORMax", "IOR");
+                DrawRangeProp(properties, "_AuxIridescenceIORMin", "_AuxIridescenceIORMax", "Iridescence IOR");
+                DrawRangeProp(properties, "_AuxSheenRimMin", "_AuxSheenRimMax", "Sheen Rim");
+
+                EditorGUI.indentLevel--;
+            }
+
+            // Second aux page: per-variant iridescence thickness range (independent toggle).
+            var useThickProp = FindProperty("_UseAuxThickness", properties);
+            if (useThickProp != null)
+            {
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField(
+                    new GUIContent("Aux Thickness Range", "Per-variant iridescence thin-film thickness range, packed into a second aux texture (R=min, G=max). The per-region position within the range still comes from the Clearcoat/Iridescence A channel. Only acts when Iridescence is on."),
+                    GUILayout.Width(EditorGUIUtility.labelWidth));
+                bool useThick = useThickProp.floatValue > 0.5f;
+                bool newUseThick = EditorGUILayout.Toggle(useThick);
+                if (newUseThick != useThick)
+                    useThickProp.floatValue = newUseThick ? 1.0f : 0.0f;
+                EditorGUILayout.EndHorizontal();
+
+                if (newUseThick)
+                {
+                    EditorGUI.indentLevel++;
+                    var tex2 = FindTexProperty("_AuxDataTexture2", properties);
+                    if (tex2 != null)
+                    {
+                        materialEditor.TexturePropertySingleLine(
+                            new GUIContent("Aux Thickness (R:Min G:Max)",
+                                "R: iridescence thickness min, G: thickness max — normalized into the storage range below (nm)."), tex2);
+                        if (tex2.textureValue != null)
+                        {
+                            EditorGUI.indentLevel++;
+                            materialEditor.TextureScaleOffsetProperty(tex2);
+                            EditorGUI.indentLevel--;
+                        }
+                    }
+                    DrawRangeProp(properties, "_AuxThicknessRangeMin", "_AuxThicknessRangeMax", "Storage Range (nm)");
+                    EditorGUILayout.HelpBox(
+                        "Storage range (nm) the R/G channels normalize into — must match the bake. The per-region position " +
+                        "within [min, max] still comes from the Clearcoat/Iridescence texture's A channel.", MessageType.None);
+                    EditorGUI.indentLevel--;
+                }
+            }
+        }
+
+        private void DrawRangeProp(MaterialProperty[] properties, string minName, string maxName, string label)
+        {
+            var pmin = FindProperty(minName, properties);
+            var pmax = FindProperty(maxName, properties);
+            if (pmin == null || pmax == null) return;
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PrefixLabel(label);
+            pmin.floatValue = EditorGUILayout.FloatField(pmin.floatValue);
+            pmax.floatValue = EditorGUILayout.FloatField(pmax.floatValue);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawTextureArrays(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            var useArraysProp = FindProperty("_UseTextureArrays", properties);
+            if (useArraysProp == null) return;
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                new GUIContent("Texture Arrays", "Switch all input textures to Texture2DArrays sampled by a per-vertex slice (UV3.x). The standard texture slots above bind to the array versions while this is on."),
+                GUILayout.Width(EditorGUIUtility.labelWidth));
+            bool useArrays = useArraysProp.floatValue > 0.5f;
+            bool newUseArrays = EditorGUILayout.Toggle(useArrays);
+            if (newUseArrays != useArrays)
+                useArraysProp.floatValue = newUseArrays ? 1.0f : 0.0f;
+            EditorGUILayout.EndHorizontal();
+
+            if (newUseArrays)
+            {
+                EditorGUI.indentLevel++;
+
+                EditorGUILayout.HelpBox(
+                    "Input textures are now Texture2DArrays — the texture slots in the sections above accept array assets.",
+                    MessageType.Info);
+
+                // Index Source: where the array layer index comes from.
+                var sourceProp = FindProperty("_ArrayIndexSource", properties);
+                int src = 0;
+                if (sourceProp != null)
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Index Source", "Vertex: per-vertex layer from UV3.x (merged meshes). Material Instance: a per-material/per-instance slice value (also overridable via MaterialPropertyBlock for instanced batching)."),
+                        GUILayout.Width(EditorGUIUtility.labelWidth));
+                    src = Mathf.RoundToInt(sourceProp.floatValue);
+                    int newSrc = EditorGUILayout.Popup(src, new[] { "Vertex", "Material Instance" });
+                    if (newSrc != src) { sourceProp.floatValue = newSrc; src = newSrc; }
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                if (src == 1)
+                {
+                    var sliceProp = FindProperty("_ArraySlice", properties);
+                    if (sliceProp != null)
+                    {
+                        int maxSlice = 0;
+                        var arr = FindProperty("_BaseColorTextureArray", properties);
+                        if (arr != null && arr.textureValue is Texture2DArray ta) maxSlice = Mathf.Max(0, ta.depth - 1);
+                        int v = Mathf.RoundToInt(sliceProp.floatValue);
+                        v = (maxSlice > 0)
+                            ? EditorGUILayout.IntSlider("Array Slice", Mathf.Clamp(v, 0, maxSlice), 0, maxSlice)
+                            : EditorGUILayout.IntField("Array Slice", Mathf.Max(0, v));
+                        sliceProp.floatValue = v;
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox(
+                        "Vertex source: write each vertex's slice index into UV channel 3 (.x). With no per-vertex data " +
+                        "every vertex reads 0, so use Material Instance to preview other layers.", MessageType.None);
+                }
+
+                EditorGUI.indentLevel--;
+            }
         }
 
         private void DrawSSRProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
@@ -1232,6 +1454,13 @@ namespace GeenzShade
             UpdateFeatureKeyword(material, properties, "_UseSpecularAntialiasing", "USE_SPECULAR_ANTIALIASING");
             UpdateFeatureKeyword(material, properties, "_UseVRCLightVolumes", "USE_VRC_LIGHT_VOLUMES");
             UpdateFeatureKeyword(material, properties, "_UseSSR", "USE_SSR");
+            UpdateFeatureKeyword(material, properties, "_UseTextureArrays", "USE_TEXTURE_ARRAYS");
+            UpdateFeatureKeyword(material, properties, "_ArrayIndexSource", "_ARRAYINDEXSOURCE_MATERIALINSTANCE");
+            UpdateFeatureKeywordInverse(material, properties, "_ArrayIndexSource", "_ARRAYINDEXSOURCE_VERTEX");
+            UpdateFeatureKeyword(material, properties, "_UseAuxData", "USE_AUX_DATA");
+            UpdateFeatureKeyword(material, properties, "_UseAuxThickness", "USE_AUX_THICKNESS");
+            UpdateFeatureKeyword(material, properties, "_FaceCullSource", "_FACECULLSOURCE_TEXTURE");
+            UpdateFeatureKeywordInverse(material, properties, "_FaceCullSource", "_FACECULLSOURCE_HARDWARE");
             
             // Lighting keywords
             UpdateFeatureKeyword(material, properties, "_VertexLights", "VERTEXLIGHT_ON");
@@ -1244,7 +1473,9 @@ namespace GeenzShade
 
         private void UpdateTextureKeyword(Material material, MaterialProperty[] properties, string propertyName, string keyword)
         {
-            var prop = FindProperty(propertyName, properties);
+            // When texture arrays are on, the assignment lives on the array variant,
+            // so detect "has texture" from whichever slot is currently active.
+            var prop = FindTexProperty(propertyName, properties);
             if (prop != null && prop.type == MaterialProperty.PropType.Texture)
             {
                 // Check if there's a corresponding toggle property
@@ -1297,11 +1528,21 @@ namespace GeenzShade
                 if (prop.name == name)
                     return prop;
             }
-            
+
             if (mandatory)
                 throw new System.Exception($"Material property {name} not found");
-            
+
             return null;
+        }
+
+        // Returns the array-variant texture property (name + "Array") when texture
+        // arrays are enabled, otherwise the standard 2D property. Lets the normal
+        // texture slots bind to the Texture2DArray in place when arrays are on.
+        private MaterialProperty FindTexProperty(string name2D, MaterialProperty[] properties)
+        {
+            var useArrays = FindProperty("_UseTextureArrays", properties);
+            bool arrays = useArrays != null && useArrays.floatValue > 0.5f;
+            return FindProperty(arrays ? name2D + "Array" : name2D, properties);
         }
 
         private void CheckNormalMapImportSettings(Texture texture)

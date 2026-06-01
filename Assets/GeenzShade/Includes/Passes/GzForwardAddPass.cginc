@@ -34,6 +34,11 @@
 #pragma shader_feature_local USE_DIFFUSE_TRANSMISSION
 #pragma shader_feature_local USE_DIFFUSE_TRANSMISSION_TEXTURE
 #pragma shader_feature_local USE_SPECULAR_ANTIALIASING
+#pragma shader_feature_local USE_TEXTURE_ARRAYS
+#pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
+#pragma shader_feature_local USE_AUX_DATA
+#pragma shader_feature_local USE_AUX_THICKNESS
+#pragma shader_feature_local _FACECULLSOURCE_HARDWARE _FACECULLSOURCE_TEXTURE
 
 #pragma shader_feature_local _RENDERMODE_OPAQUE _RENDERMODE_CUTOUT _RENDERMODE_TRANSPARENT _RENDERMODE_PREMULTIPLIEDALPHA
 
@@ -65,11 +70,28 @@ half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
     half3 viewDir = normalize(_WorldSpaceCameraPos - i.worldPos);
 
     // Sample material data with view direction and facing info
-    GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, facing < 0);
+    #ifdef USE_TEXTURE_ARRAYS
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, facing < 0, i.arraySlice);
+    #else
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, facing < 0);
+    #endif
 
     // Alpha test for cutout mode
     #ifdef _RENDERMODE_CUTOUT
         clip(matData.alpha - _AlphaCutoff);
+    #endif
+
+    // Texture-driven face culling (matches ForwardBase) — reads the aux B channel
+    // directly, independent of the Aux Data feature.
+    #if defined(_FACECULLSOURCE_TEXTURE)
+        #ifdef USE_TEXTURE_ARRAYS
+            float gzCullSlice = i.arraySlice;
+        #else
+            float gzCullSlice = 0;
+        #endif
+        float2 gzCullUV = i.uv * GZ_TEX_ST(_AuxDataTexture).xy + GZ_TEX_ST(_AuxDataTexture).zw;
+        half gzCullMode = round(GZ_SAMPLE_TEX(_AuxDataTexture, gzCullUV, gzCullSlice).b * 2.0);
+        if (gzCullMode > 0.5 && ((gzCullMode >= 1.5) == (facing >= 0))) discard;
     #endif
 
     // Create lighting context for additive light

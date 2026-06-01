@@ -16,6 +16,8 @@ Material:
   - USE_ENVIRONMENT_REFLECTION
   - USE_SSR
   - VERTEXLIGHT_ON
+  - _ARRAYINDEXSOURCE_VERTEX
+  - _FACECULLSOURCE_HARDWARE
   - _RENDERMODE_OPAQUE
   - _SHDOMINANTLIGHT_ON
   - _VERTEXLIGHTS_ON
@@ -24,7 +26,7 @@ Material:
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
+  m_CustomRenderQueue: 2000
   stringTagMap:
     RenderType: Opaque
   disabledShaderPasses: []
@@ -32,9 +34,21 @@ Material:
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _AuxDataTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _AuxDataTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BaseColorTexture:
         m_Texture: {fileID: 0}
         m_Scale: {x: 4, y: 4}
+        m_Offset: {x: 0, y: 0}
+    - _BaseColorTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _BumpMap:
         m_Texture: {fileID: 0}
@@ -44,8 +58,16 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _ClearcoatIridescenceTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _ClearcoatNormalTexture:
         m_Texture: {fileID: 2800000, guid: a332a5d547b73bd4b9ebf497755b2019, type: 3}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ClearcoatNormalTextureArray:
+        m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _DetailAlbedoMap:
@@ -64,11 +86,19 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _DiffuseTransmissionTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _EmissionMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _EmissiveTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissiveTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -92,7 +122,15 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _NormalTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _ORMTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ORMTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -108,13 +146,29 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SheenTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _SpecularTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SpecularTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _AlphaCutoff: 0.5
+    - _ArrayIndexSource: 0
+    - _ArraySlice: 0
+    - _AuxIORMax: 4
+    - _AuxIORMin: 0
+    - _AuxIridescenceIORMax: 4
+    - _AuxIridescenceIORMin: 0
+    - _AuxSheenRimMax: 10
+    - _AuxSheenRimMin: 0
     - _BumpScale: 1
     - _ClearcoatFactor: 1
     - _ClearcoatNormalScale: 1
@@ -125,6 +179,8 @@ Material:
     - _DiffuseTransmissionFactor: 0
     - _DstBlend: 0
     - _EmissionStrength: 1
+    - _FaceCullBake: 2
+    - _FaceCullSource: 0
     - _FallbackDiffuseMipLevel: 6
     - _FallbackIntensity: 1
     - _FallbackMaxMipLevel: 8
@@ -150,11 +206,13 @@ Material:
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
     - _SSRBinarySteps: 4.101
-    - _SSREdgeFade: 0.2171
+    - _SSREdgeFade: 0.0822
+    - _SSRHeight: 0.65
     - _SSRIntensity: 1
     - _SSRMaxDistance: 1.27
     - _SSRMaxRoughness: 1
     - _SSRStepCount: 64
+    - _SSRStrength: 1
     - _SSRThickness: 0.269
     - _SheenFactor: 1
     - _SheenRimBoost: 4.47
@@ -167,6 +225,7 @@ Material:
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _UVSec: 0
+    - _UseAuxData: 0
     - _UseBaseColorTexture: 1
     - _UseClearcoat: 1
     - _UseClearcoatIridescenceTexture: 0
@@ -185,6 +244,7 @@ Material:
     - _UseSpecularAntialiasing: 0
     - _UseSpecularExtension: 0
     - _UseSpecularTexture: 0
+    - _UseTextureArrays: 0
     - _UseVRCLightVolumes: 0
     - _VertexLights: 1
     - _ZTest: 4

@@ -39,6 +39,11 @@
 #pragma shader_feature_local USE_VRC_LIGHT_VOLUMES
 #pragma shader_feature_local USE_SPECULAR_ANTIALIASING
 #pragma shader_feature_local USE_SSR
+#pragma shader_feature_local USE_TEXTURE_ARRAYS
+#pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
+#pragma shader_feature_local USE_AUX_DATA
+#pragma shader_feature_local USE_AUX_THICKNESS
+#pragma shader_feature_local _FACECULLSOURCE_HARDWARE _FACECULLSOURCE_TEXTURE
 
 #pragma shader_feature_local _RENDERMODE_OPAQUE _RENDERMODE_CUTOUT _RENDERMODE_TRANSPARENT _RENDERMODE_PREMULTIPLIEDALPHA
 #pragma shader_feature_local _VERTEXLIGHTS_OFF _VERTEXLIGHTS_ON
@@ -73,11 +78,30 @@ half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
 
     // Sample material data with view direction and facing info
     // This handles normal flipping for back faces internally
-    GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBN(i), viewDir, i.worldPos, facing < 0);
+    #ifdef USE_TEXTURE_ARRAYS
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBN(i), viewDir, i.worldPos, facing < 0, i.arraySlice);
+    #else
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBN(i), viewDir, i.worldPos, facing < 0);
+    #endif
 
     // Alpha test for cutout mode
     #ifdef _RENDERMODE_CUTOUT
         clip(matData.alpha - _AlphaCutoff);
+    #endif
+
+    // Texture-driven face culling — reads the aux B channel directly (0=off,
+    // 0.5=back, 1=front), so it works whenever Face Cull Source = Texture and an
+    // aux texture is assigned, independent of the Aux Data feature. Material must
+    // render Cull Off so both faces reach here.
+    #if defined(_FACECULLSOURCE_TEXTURE)
+        #ifdef USE_TEXTURE_ARRAYS
+            float gzCullSlice = i.arraySlice;
+        #else
+            float gzCullSlice = 0;
+        #endif
+        float2 gzCullUV = i.uv * GZ_TEX_ST(_AuxDataTexture).xy + GZ_TEX_ST(_AuxDataTexture).zw;
+        half gzCullMode = round(GZ_SAMPLE_TEX(_AuxDataTexture, gzCullUV, gzCullSlice).b * 2.0);
+        if (gzCullMode > 0.5 && ((gzCullMode >= 1.5) == (facing >= 0))) discard;
     #endif
 
     // Create direct lighting context FIRST to get attenuation
