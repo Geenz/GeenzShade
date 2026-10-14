@@ -11,7 +11,7 @@
 
 ### Option 2: Install specific version
 To install a specific version, append the version tag:
-- `https://github.com/Geenz/GeenzShade.git#upm/v0.1.0`
+- `https://github.com/Geenz/GeenzShade.git#upm/v0.1.1`
 
 ### Option 3: Add to manifest.json
 Add this line to your `Packages/manifest.json` dependencies:
@@ -205,7 +205,7 @@ The material inspector provides:
 
 This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-Copyright (c) 2025 Geenz
+Copyright (c) 2025 Jonathan "Geenz" Goodman
 
 ## Credits
 

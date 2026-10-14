@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * Copyright (c) 2025 Geenz
+ * Copyright (c) 2025 Jonathan "Geenz" Goodman
  */
 
 // Pass shells in GzPBR.shader define GZ_QUALITY_TIER before including this file.
