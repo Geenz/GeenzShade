@@ -208,8 +208,6 @@ Just some stuff that will land here eventually, in no particular order or priori
 ### GzPBR
 
 - Amplify Shader Editor nodes
-- Support for static lighting on static surfaces
-    - Currently optimized for dynamic objects like avatars.
 - These need grab passes, so I'm not in a rush to support them:
     - Support for khr_materials_volume
     - Support for khr_materials_dispersion
