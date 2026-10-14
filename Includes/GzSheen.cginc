@@ -10,15 +10,7 @@
 
 #include "GzMath.cginc"
 
-// ============================================
-// Constants
-// ============================================
-
 #define GZ_MIN_SIN2H 0.0078125  // Prevent zero in log for Charlie distribution (1/128)
-
-// ============================================
-// Sheen BRDF Components
-// ============================================
 
 // Charlie sheen distribution
 half GzD_Charlie(half roughness, half NoH)
@@ -76,9 +68,7 @@ half3 GzCalculateSheen(GzMaterialData matData, GzLightingContext ctx)
     return matData.sheenColor * D * V * matData.sheenFactor * matData.sheenRimBoost;
 }
 
-// Cheap cloth visibility (Ashikhmin/Neubelt) for lower quality tiers.
-// Replaces the numeric Lambda-based GzV_Sheen (two exp + pow evaluations)
-// with a single reciprocal. Keeps the Charlie distribution for the lobe shape.
+// Cheap Ashikhmin/Neubelt cloth visibility for lower quality tiers.
 half GzV_SheenApprox(half NoL, half NoV, half sheenRoughness)
 {
     return saturate(0.25 * GzRcp(NoL + NoV - NoL * NoV));
@@ -101,9 +91,6 @@ half GzSheenAlbedoScalingLUT(half NoV, half sheenRoughness)
     half x = 1.0 - NoV;
     half x2 = x * x;
     half x3 = x2 * x;
-    // Low roughness concentrates energy at grazing (cubic)
-    // High roughness spreads energy more evenly (quadratic)
-    // Scale increases with roughness (more total energy in sheen lobe)
     return saturate(lerp(x3, x2, sheenRoughness) * lerp(0.25, 0.5, sheenRoughness));
 }
 

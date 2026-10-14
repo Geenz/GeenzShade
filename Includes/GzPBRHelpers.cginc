@@ -12,10 +12,6 @@
 #include "GzMaterial.cginc"
 #include "GzIridescence.cginc"
 
-// ============================================
-// F0 Calculation Helpers
-// ============================================
-
 // Calculate F0 from IOR
 half3 GzGetF0FromIOR(half ior)
 {
@@ -53,10 +49,6 @@ half3 GzGetF90Specular(half metallic, half specularFactor)
     return lerp(half3(specularFactor, specularFactor, specularFactor), half3(1, 1, 1), metallic);
 }
 
-// ============================================
-// Albedo Calculations
-// ============================================
-
 // Get diffuse albedo (non-metals only)
 half3 GzGetAlbedo(half3 baseColor, half metallic)
 {
@@ -71,10 +63,6 @@ half3 GzGetSpecularColor(half3 baseColor, half metallic, half3 dielectricSpecCol
     return lerp(dielectricSpecColor * specFactor, baseColor, metallic);
 }
 
-// ============================================
-// Roughness Processing
-// ============================================
-
 // Clamp roughness for punctual lights to avoid singularities
 half GzClampRoughness(half roughness, bool isDirectLighting)
 {
@@ -86,10 +74,6 @@ half GzRemapRoughness(half roughness)
 {
     return roughness * roughness;
 }
-
-// ============================================
-// Iridescence Helpers
-// ============================================
 
 // Apply iridescence modification to F0
 // Note: This requires the GzEvalIridescence function from GzIridescence.cginc
@@ -104,10 +88,6 @@ half3 GzApplyIridescence(half3 baseF0, half iridescenceFactor, half iridescenceI
         return baseF0;
     #endif
 }
-
-// ============================================
-// Texture Thickness Mapping
-// ============================================
 
 // Map normalized thickness to physical thickness for iridescence
 half GzMapIridescenceThickness(half normalizedThickness, half thicknessMin, half thicknessMax)

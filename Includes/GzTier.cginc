@@ -8,26 +8,7 @@
 #ifndef GZ_TIER_INCLUDED
 #define GZ_TIER_INCLUDED
 
-// ============================================
-// Quality Tier Normalizer
-// ============================================
-//
-// GZ_QUALITY_TIER is #defined by each SubShader's pass shell (0 = highest quality,
-// higher numbers = cheaper). This file translates the tier number plus the
-// per-material USE_* keywords into "effective" GZ_USE_* / GZ_APPROX_* capability
-// macros that the rest of the includes consume.
-//
-// The USE_* keywords stay owned by the material/GUI and are NEVER redefined here.
-// Effective capability = (tier permits it) AND (material keyword is on).
-//
-// Tier map (mirrors the SubShader LOD values in GzPBR.shader):
-//   Tier 0 "Ultra"  (LOD 400): exact iridescence & sheen, clearcoat, + SSR
-//   Tier 1 "High"   (LOD 300): approx iridescence & sheen, clearcoat
-//   Tier 2 "Medium" (LOD 200): approx iridescence & sheen, no clearcoat
-//   Tier 3 "Low"    (LOD 100): no iridescence / sheen / clearcoat
-//
-// Include this BEFORE the modules that read GZ_USE_* / GZ_APPROX_* (i.e. before
-// GzMaterialSampling / GzLayerCalculations).
+// Include before GzMaterialSampling and GzLayerCalculations.
 
 #ifndef GZ_QUALITY_TIER
     #define GZ_QUALITY_TIER 1   // safe default if a shell forgets to set it
@@ -65,5 +46,12 @@
 #if defined(GZ_ENABLE_SSR) && defined(USE_SSR) && defined(USE_ENVIRONMENT_REFLECTION)
     #define GZ_USE_SSR
 #endif
+
+// --- Emission wave (AudioLink): deliberately not tier-gated ---
+#if defined(_EMISSIONWAVE_PULSE) || defined(_EMISSIONWAVE_RIPPLE)
+    #define GZ_EMISSION_WAVE
+#endif
+
+// Object toggles are not tier-gated: consumers read USE_OBJECT_TOGGLES directly.
 
 #endif // GZ_TIER_INCLUDED

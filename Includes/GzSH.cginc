@@ -49,13 +49,10 @@ half3 GzGetDominantLightDirFromSH()
     dir.y = unity_SHAg.y; 
     dir.z = unity_SHAb.z;
     
-    // Unity stores SH in a specific way:
-    // The dipole moment gives us the average light direction
-    // We need to extract it properly from the L1 band
     half3 L1_R = half3(unity_SHAr.x, unity_SHAr.y, unity_SHAr.z);
     half3 L1_G = half3(unity_SHAg.x, unity_SHAg.y, unity_SHAg.z);
     half3 L1_B = half3(unity_SHAb.x, unity_SHAb.y, unity_SHAb.z);
-    
+
     // Average the color channels for a more stable direction
     dir = (L1_R + L1_G + L1_B) / 3.0;
     

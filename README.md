@@ -11,7 +11,7 @@
 
 ### Option 2: Install specific version
 To install a specific version, append the version tag:
-- `https://github.com/Geenz/GeenzShade.git#upm/v0.0.12`
+- `https://github.com/Geenz/GeenzShade.git#upm/v0.1.0`
 
 ### Option 3: Add to manifest.json
 Add this line to your `Packages/manifest.json` dependencies:
@@ -34,11 +34,11 @@ A comprehensive, physically-based rendering (PBR) shader system for Unity that i
 ### Features
 
 #### Core PBR Implementation
-- **Full glTF 2.0 Compliance**: Implements the complete glTF 2.0 core material specification
-- **Metallic-Roughness Workflow**: Industry-standard PBR workflow with metallic and roughness parameters
-- **ORM Texture Packing**: Efficient texture usage with Occlusion-Roughness-Metallic packed textures
-- **Normal Mapping**: Tangent-space normal maps with adjustable intensity
-- **Emission**: HDR emissive materials with strength control
+- Full glTF 2.0 Compliance: Implements the complete glTF 2.0 core material specification
+- Metallic-Roughness Workflow: Industry-standard PBR workflow with metallic and roughness parameters
+- ORM Texture Packing: Efficient texture usage with Occlusion-Roughness-Metallic packed textures
+- Normal Mapping: Tangent-space normal maps with adjustable intensity
+- Emission: HDR emissive materials with strength control
 
 #### Advanced Material Extensions
 
@@ -70,12 +70,12 @@ A comprehensive, physically-based rendering (PBR) shader system for Unity that i
 - Works best with double-sided rendering
 
 #### Rendering Modes
-- **Opaque**: Standard solid materials
-- **Cutout**: Alpha-tested transparency with configurable threshold
-- **Transparent**: Full alpha blending with depth fade support
-- **Additive**: Light-accumulating blend mode
-- **Multiply**: Darkening blend mode
-- **Premultiplied Alpha**: Correct compositing for UI and special effects
+- Opaque: Standard solid materials
+- Cutout: Alpha-tested transparency with configurable threshold
+- Transparent: Full alpha blending with depth fade support
+- Additive: Light-accumulating blend mode
+- Multiply: Darkening blend mode
+- Premultiplied Alpha: Correct compositing for UI and special effects
 
 #### Advanced Rendering Features
 
@@ -92,7 +92,7 @@ A comprehensive, physically-based rendering (PBR) shader system for Unity that i
 - Dominant light extraction from spherical harmonics to help make static lighting "pop" more
 
 ##### VRChat Features
-- **Light Volume Support**: Full integration with VRChat's light volume system
+- Light Volume Support: Full integration with VRChat's light volume system
 
 ##### Quality Tiers (Shader LOD)
 GzPBR ships as four Unity shader-LOD tiers. Unity selects the highest tier whose LOD value is `<= Shader.globalMaximumLOD` (or the shader asset's `maximumLOD`), so lowering that ceiling scales quality/cost down across the board:
@@ -106,39 +106,54 @@ GzPBR ships as four Unity shader-LOD tiers. Unity selects the highest tier whose
 
 At High/Medium the iridescence and sheen layers switch to cheaper analytic approximations (a thin-film interference cosine and a cloth visibility term) instead of the full Fourier/numeric evaluations. At Low those layers plus clearcoat are compiled out entirely.
 
-> **Limitation:** Unity shader LOD is **global per shader asset**, not per-material. The material inspector's "Quality Tier" dropdown sets `shader.maximumLOD` for *every* GzPBR material as an authoring/preview convenience. To drive it at runtime (e.g. a quality setting), set `Shader.globalMaximumLOD` or `shader.maximumLOD` from script. True per-material tiering would require separate shader assets per tier.
+> Limitation: Unity shader LOD is global per shader asset, not per-material. The material inspector's "Quality Tier" dropdown sets `shader.maximumLOD` for every GzPBR material as an authoring/preview convenience. To drive it at runtime (e.g. a quality setting), set `Shader.globalMaximumLOD` or `shader.maximumLOD` from script. True per-material tiering would require separate shader assets per tier.
 
 ##### Screen-Space Reflections (Ultra tier only)
-The Ultra tier adds optional screen-space reflections, enabled per material with the **Use Screen-Space Reflections** toggle. The implementation is adapted from [Mochie's Unity Shaders](https://github.com/MochiMochiBoboService/Mochies-Unity-Shaders) (MIT, © 2020 MochiesCode); the original SSR technique is by **error.mdl, Toocanzs, and Xiexe**, reworked by Mochie. See `Includes/GzSSR.cginc` for the attribution and license notice.
+The Ultra tier adds optional screen-space reflections, enabled per material with the "Use Screen-Space Reflections" toggle. The implementation is adapted from [Mochie's Unity Shaders](https://github.com/MochiMochiBoboService/Mochies-Unity-Shaders) (MIT, (c) 2020 MochiesCode); the original SSR technique is by error.mdl, Toocanzs, and Xiexe, reworked by Mochie. See `Includes/GzSSR.cginc` for the attribution and license notice.
 
-- **Requires a camera depth texture.** In VRChat that means a realtime shadow-casting directional light in the scene, or a depth-enabled camera. Without depth the rays miss and reflections fall back to probes/cubemap.
-- Uses a GrabPass capture of the opaque scene and a view-space ray march. Set the material's **Render Queue** (Advanced Render Mode) so it draws after the geometry it should reflect.
+- Requires a camera depth texture. In VRChat that means a realtime shadow-casting directional light in the scene, or a depth-enabled camera. Without depth the rays miss and reflections fall back to probes/cubemap.
+- Uses a GrabPass capture of the opaque scene and a view-space ray march. Set the material's "Render Queue" (Advanced Render Mode) so it draws after the geometry it should reflect.
 - Skipped in mirrors and for rough surfaces; fades toward screen edges. Stereo-correct for single-pass-instanced VR. Tunable via Strength, Max Roughness, Ray Height/Step, and Edge Fade.
+
+##### Soft Depth Fade (transparent)
+Enabled per material with the "Use Soft Depth Fade" toggle. Eases a transparent surface's alpha out as it approaches the opaque geometry behind it, softening hard intersection seams (the "soft particles" technique).
+
+- Only acts in the Transparent and Premultiplied render modes; opaque/cutout are unaffected.
+- Requires a camera depth texture (same as SSR: a realtime shadow-casting directional light, or a depth-enabled camera). Where no depth is available the surface renders fully - no fade. Stereo-correct for single-pass-instanced VR.
+- "Fade Distance" controls how far from the opaque surface the fade begins. Applies in both the base and additive lighting passes.
+- Heads-up: this really only behaves on static / non-skinned meshes. On skinned (rigged) meshes the depth prepass and the forward pass don't agree on the skinned vertex positions, so the fade gets confused - that's a Unity quirk, not something the shader can paper over. Stick to non-rigged geometry for this one.
+
+##### Screen-Space Shadows (SH dominant light)
+Enabled per material with the "Use Screen-Space Shadows" toggle. Casts a basic screen-space shadow from the dominant light direction the shader already derives from the scene's spherical harmonics, marching the depth buffer toward that direction and darkening the SH dominant light where it's occluded.
+
+- Only affects the SH dominant light on dynamic (non-lightmapped) objects - it doesn't touch realtime lights or lightmapped surfaces.
+- Requires a camera depth texture (same as SSR: a realtime shadow-casting directional light, or a depth-enabled camera). Stereo-correct for single-pass-instanced VR; skipped in mirrors.
+- Tunables: Intensity, March Distance, Steps, Thickness, Bias. It's a single-march approximation (no contact refinement), so expect contact shadows / coarse occlusion rather than crisp shadow edges.
 
 #### Texture Channels
 
 ##### Base Color Texture
-- **RGB**: Albedo/diffuse color
-- **A**: Alpha (opacity) for transparency modes
+- RGB: Albedo/diffuse color
+- A: Alpha (opacity) for transparency modes
 
 ##### ORM Texture (Occlusion-Roughness-Metallic)
-- **R**: Ambient occlusion (0=occluded, 1=unoccluded)
-- **G**: Roughness factor (0=glossy, 1=rough)
-- **B**: Metallic factor (0=dielectric, 1=metal)
+- R: Ambient occlusion (0=occluded, 1=unoccluded)
+- G: Roughness factor (0=glossy, 1=rough)
+- B: Metallic factor (0=dielectric, 1=metal)
 
 ##### Clearcoat/Iridescence Texture
-- **R**: Clearcoat intensity factor
-- **G**: Clearcoat roughness factor
-- **B**: Iridescence intensity factor
-- **A**: Iridescence thickness factor
+- R: Clearcoat intensity factor
+- G: Clearcoat roughness factor
+- B: Iridescence intensity factor
+- A: Iridescence thickness factor
 
 ##### Sheen Texture
-- **RGB**: Sheen color tint
-- **A**: Sheen roughness factor
+- RGB: Sheen color tint
+- A: Sheen roughness factor
 
 ##### Diffuse Transmission Texture
-- **RGB**: Transmission color modulation
-- **A**: Transmission factor (0=opaque, 1=fully transmissive)
+- RGB: Transmission color modulation
+- A: Transmission factor (0=opaque, 1=fully transmissive)
 
 ### Installation
 

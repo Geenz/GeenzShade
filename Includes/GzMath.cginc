@@ -8,15 +8,7 @@
 #ifndef GZ_MATH_INCLUDED
 #define GZ_MATH_INCLUDED
 
-// ============================================
-// Constants
-// ============================================
-
 #define GZ_EPSILON 0.0001
-
-// ============================================
-// Common Math Operations
-// ============================================
 
 // Square function
 half GzSqr(half x)
@@ -58,10 +50,6 @@ half GzPositivePow(half base, half power)
     return pow(max(abs(base), half(1e-4)), power);
 }
 
-// ============================================
-// Vector Component Operations
-// ============================================
-
 // Get maximum component of a vector
 half GzMax3(half3 v)
 {
@@ -96,10 +84,6 @@ half GzLuminance(half3 color)
     return dot(color, half3(0.2126, 0.7152, 0.0722));
 }
 
-// ============================================
-// Safe Math Operations
-// ============================================
-
 // Safe division (avoids divide by zero) - useful for shader safety
 half GzSafeDiv(half a, half b)
 {
@@ -123,10 +107,6 @@ half GzRcp(half x)
 {
     return 1.0 / max(x, GZ_EPSILON);
 }
-
-// ============================================
-// Interpolation and Remapping
-// ============================================
 
 // Inverse lerp (get t from lerp result)
 half GzInverseLerp(half a, half b, half value)
@@ -153,15 +133,6 @@ half GzSmootherstep(half edge0, half edge1, half x)
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
 }
 
-// ============================================
-// Clamping and Saturation
-// ============================================
-
-
-// ============================================
-// Trigonometric Helpers
-// ============================================
-
 // Cosine from sine using Pythagorean identity
 half GzCosFromSin(half sinTheta)
 {
@@ -174,10 +145,6 @@ half GzSinFromCos(half cosTheta)
     return sqrt(saturate(1.0 - cosTheta * cosTheta));
 }
 
-// ============================================
-// Hashing and Noise
-// ============================================
-
 // Simple hash function for pseudo-random values
 half GzHash(half2 p)
 {
@@ -185,10 +152,6 @@ half GzHash(half2 p)
     p3 += dot(p3, p3.yzx + 33.33);
     return frac((p3.x + p3.y) * p3.z);
 }
-
-// ============================================
-// Matrix Operations
-// ============================================
 
 // Create rotation matrix around Y axis
 half3x3 GzRotateY(half angle)

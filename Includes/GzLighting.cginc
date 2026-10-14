@@ -13,10 +13,6 @@
 #include "GzMaterial.cginc"
 #include "GzPBRHelpers.cginc"
 
-// ============================================
-// Lighting Context Structure
-// ============================================
-
 struct GzLightingContext
 {
     // Light properties
@@ -52,10 +48,6 @@ struct GzLightingContext
     // Ambient/indirect
     half3 ambientLight;  // Can be SH data or flat color
 };
-
-// ============================================
-// Context Creation and Population
-// ============================================
 
 // Create an empty lighting context
 GzLightingContext GzCreateLightingContext()

@@ -11,9 +11,7 @@
 #include "GzMath.cginc"  // For GzSqr, GzPow5
 #include "GzBRDF.cginc"  // For GzFresnelSchlick
 
-// KHR_materials_iridescence implementation
-// Based on official glTF Sample Renderer
-// Implements thin-film interference model
+// KHR_materials_iridescence, ported from the glTF Sample Renderer
 
 // XYZ to Rec709 color space conversion matrix
 static const half3x3 XYZ_TO_REC709 = half3x3(
@@ -120,11 +118,7 @@ half3 GzEvalIridescence(half outsideIOR, half eta2, half cosTheta1, half thinFil
     return max(I, half3(0.0, 0.0, 0.0));
 }
 
-// Cheap thin-film approximation for lower quality tiers (GZ_APPROX_IRIDESCENCE).
-// Replaces the full Fourier sensitivity evaluation above with an analytic
-// per-channel interference cosine. Outside IOR is assumed to be 1.0, matching
-// the exact path's first argument. Returns an iridescent F0-like reflectance
-// the caller mixes over the base F0 by iridescenceFactor.
+// Cheap approximation for GZ_APPROX_IRIDESCENCE, assumes outside IOR 1.0
 half3 GzEvalIridescenceApprox(half eta2, half cosTheta1, half thinFilmThickness, half3 baseF0)
 {
     // Snell refraction into the film (outside IOR = 1.0)

@@ -12,26 +12,56 @@ Material:
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords:
+  - USE_DITHERED_SHADOWS
   - USE_ENVIRONMENT_REFLECTION
+  - USE_SHARED_SAMPLER
+  - USE_SOFT_DEPTH
   - USE_SPECULAR_EXTENSION
   - USE_SSR
   - VERTEXLIGHT_ON
-  - _RENDERMODE_OPAQUE
+  - _ARRAYINDEXSOURCE_VERTEX
+  - _EMISSIONWAVE_OFF
+  - _FACECULLSOURCE_HARDWARE
+  - _LTCGI_OFF
+  - _RENDERMODE_TRANSPARENT
   - _SHDOMINANTLIGHT_ON
   - _VERTEXLIGHTS_ON
   m_InvalidKeywords:
   - USE_MRO_TEXTURE
+  - _ALPHABLEND_ON
+  - _EMISSIONWAVEBASS_ON
   m_LightmapFlags: 4
-  m_EnableInstancingVariants: 0
+  m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
-  stringTagMap: {}
+  m_CustomRenderQueue: 3000
+  stringTagMap:
+    RenderType: Transparent
   disabledShaderPasses: []
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
+    - _AuxDataTexture:
+        m_Texture: {fileID: 2800000, guid: 51fd6eb7bfc20c0439793dd562de526b, type: 2}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _AuxDataTexture2:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _AuxDataTexture2Array:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _AuxDataTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _BaseColorTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _BaseColorTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -43,7 +73,15 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _ClearcoatIridescenceTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _ClearcoatNormalTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ClearcoatNormalTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -63,11 +101,23 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _DiffuseTransmissionTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _EmissionMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _EmissionWaveSdfTex:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _EmissiveTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _EmissiveTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -91,7 +141,15 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _NormalTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _ORMTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _ORMTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
@@ -107,13 +165,31 @@ Material:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
+    - _SheenTextureArray:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
     - _SpecularTexture:
+        m_Texture: {fileID: 0}
+        m_Scale: {x: 1, y: 1}
+        m_Offset: {x: 0, y: 0}
+    - _SpecularTextureArray:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
     - _AlphaCutoff: 0.5
+    - _ArrayIndexSource: 0
+    - _ArraySlice: 0
+    - _AuxIORMax: 4
+    - _AuxIORMin: 0
+    - _AuxIridescenceIORMax: 4
+    - _AuxIridescenceIORMin: 0
+    - _AuxSheenRimMax: 10
+    - _AuxSheenRimMin: 0
+    - _AuxThicknessRangeMax: 2000
+    - _AuxThicknessRangeMin: 0
     - _BumpScale: 1
     - _ClearcoatFactor: 0
     - _ClearcoatNormalScale: 1
@@ -122,56 +198,120 @@ Material:
     - _Cutoff: 0.5
     - _DetailNormalMapScale: 1
     - _DiffuseTransmissionFactor: 0
-    - _DstBlend: 0
+    - _DstBlend: 10
     - _EmissionStrength: 1
+    - _EmissionWave: 0
+    - _EmissionWaveBass: 1
+    - _EmissionWaveEdgeFade: 0.08
+    - _EmissionWaveEdgeSoftness: 1
+    - _EmissionWaveFrequency: 8
+    - _EmissionWaveFresnel: 0
+    - _EmissionWaveFresnelClampMax: 1
+    - _EmissionWaveFresnelClampMin: 0
+    - _EmissionWaveFresnelMultiplier: 1
+    - _EmissionWaveFresnelPower: 1
+    - _EmissionWaveGain: 1
+    - _EmissionWaveGate: 0.02
+    - _EmissionWaveGlow: 2
+    - _EmissionWaveGrow: 0.35
+    - _EmissionWaveHighMid: 0
+    - _EmissionWaveLowMid: 0
+    - _EmissionWavePivot: 0
+    - _EmissionWaveRingWidth: 0.3
+    - _EmissionWaveSdfFalloff: 1
+    - _EmissionWaveSdfMul: 1
+    - _EmissionWaveSmoothing: 6
+    - _EmissionWaveSoftness: 2
+    - _EmissionWaveSpeed: 1
+    - _EmissionWaveTravel: 0.35
+    - _EmissionWaveTreble: 0
+    - _FaceCullBake: 2
+    - _FaceCullSource: 0
     - _FallbackDiffuseMipLevel: 6
     - _FallbackIntensity: 1
     - _FallbackMaxMipLevel: 8
     - _GlossMapScale: 1
     - _Glossiness: 0.5
     - _GlossyReflections: 1
+    - _GzToggleD0: 1
+    - _GzToggleD1: 1
+    - _GzToggleD10: 1
+    - _GzToggleD11: 1
+    - _GzToggleD12: 1
+    - _GzToggleD13: 1
+    - _GzToggleD14: 1
+    - _GzToggleD15: 1
+    - _GzToggleD16: 1
+    - _GzToggleD17: 1
+    - _GzToggleD18: 1
+    - _GzToggleD19: 1
+    - _GzToggleD2: 1
+    - _GzToggleD20: 1
+    - _GzToggleD21: 1
+    - _GzToggleD22: 1
+    - _GzToggleD23: 1
+    - _GzToggleD3: 1
+    - _GzToggleD4: 1
+    - _GzToggleD5: 1
+    - _GzToggleD6: 1
+    - _GzToggleD7: 1
+    - _GzToggleD8: 1
+    - _GzToggleD9: 1
     - _IOR: 3
     - _IridescenceFactor: 0
     - _IridescenceIOR: 1.3
     - _IridescenceThickness: 1
     - _IridescenceThicknessMax: 400
     - _IridescenceThicknessMin: 100
+    - _LTCGI: 0
     - _LightIntensityMultiplier: 3
     - _LightmapReflectionBlend: 0
     - _Metallic: 0.5
     - _Mode: 0
     - _NormalScale: 1
+    - _ObjectToggles: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.02
     - _ReflectionProbeThreshold: 0.1
-    - _RenderMode: 0
+    - _RenderMode: 1
     - _Roughness: 0.3
     - _SHDominantLight: 1
     - _SHThreshold: 0.1
     - _SSRBinarySteps: 4
     - _SSREdgeFade: 0.1
+    - _SSRHeight: 0.65
     - _SSRIntensity: 1
     - _SSRMaxDistance: 1.09
     - _SSRMaxRoughness: 1
     - _SSRStepCount: 24
+    - _SSRStrength: 1
     - _SSRThickness: 0.25
+    - _SSShadowBias: 0.02
+    - _SSShadowDistance: 1
+    - _SSShadowIntensity: 1
+    - _SSShadowSteps: 16
+    - _SSShadowThickness: 0.5
     - _SheenFactor: 0
     - _SheenRimBoost: 1
     - _SheenRoughness: 0
     - _SmoothnessTextureChannel: 0
+    - _SoftDepthFadeDistance: 0.027
     - _SpecularAACameraDistanceFalloff: 20
     - _SpecularAAEdgeFalloff: 0.5
     - _SpecularAAEdgeRoughness: 0.3
     - _SpecularFactor: 1
     - _SpecularHighlights: 1
-    - _SrcBlend: 1
+    - _SrcBlend: 5
     - _UVSec: 0
+    - _UseAuxData: 0
+    - _UseAuxThickness: 0
     - _UseBaseColorTexture: 1
     - _UseClearcoat: 0
     - _UseClearcoatIridescenceTexture: 0
     - _UseClearcoatNormalTexture: 1
     - _UseDiffuseTransmission: 0
     - _UseDiffuseTransmissionTexture: 0
+    - _UseDitheredShadows: 1
     - _UseEmissiveTexture: 0
     - _UseEnvironmentReflection: 1
     - _UseIridescence: 0
@@ -179,19 +319,28 @@ Material:
     - _UseNormalTexture: 0
     - _UseORMTexture: 1
     - _UseSSR: 1
+    - _UseScreenSpaceShadows: 0
+    - _UseSharedSampler: 1
     - _UseSheen: 0
     - _UseSheenTexture: 0
+    - _UseSoftDepth: 1
     - _UseSpecularAntialiasing: 0
     - _UseSpecularExtension: 1
     - _UseSpecularTexture: 0
+    - _UseTextureArrays: 0
     - _UseVRCLightVolumes: 0
     - _VertexLights: 1
     - _ZTest: 4
-    - _ZWrite: 1
+    - _ZWrite: 0
     m_Colors:
-    - _Color: {r: 0, g: 0, b: 1, a: 1}
+    - _Color: {r: 0.27302453, g: 0, b: 1, a: 0.4745098}
     - _DiffuseTransmissionColorFactor: {r: 1, g: 1, b: 1, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
+    - _EmissionWaveAxis: {r: 0, g: 1, b: 0, a: 0}
+    - _EmissionWaveBassColor: {r: 1, g: 0.24999997, b: 0.24999997, a: 1}
+    - _EmissionWaveHighMidColor: {r: 0.29999998, g: 1, b: 0.39999998, a: 1}
+    - _EmissionWaveLowMidColor: {r: 1, g: 0.9, b: 0.29999998, a: 1}
+    - _EmissionWaveTrebleColor: {r: 0.34999996, g: 0.54999995, b: 1, a: 1}
     - _EmissiveFactor: {r: 0, g: 0, b: 0, a: 1}
     - _SheenColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecularColor: {r: 1, g: 0, b: 0, a: 1}

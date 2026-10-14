@@ -11,10 +11,7 @@
 #include "UnityCG.cginc"
 #include "UnityLightingCommon.cginc"
 #include "AutoLight.cginc"
-
-// ============================================
-// Unified Vertex Data Structures
-// ============================================
+#include "GzObjectToggles.cginc"
 
 struct GzVertexInput
 {
@@ -24,6 +21,9 @@ struct GzVertexInput
     float2 uv : TEXCOORD0;
     float2 uv1 : TEXCOORD1;     // Always include UV1 for lightmaps (matches Unity Standard)
     float2 uv2 : TEXCOORD2;     // Always include UV2 for dynamic lightmaps
+    #if defined(USE_TEXTURE_ARRAYS) || defined(USE_OBJECT_TOGGLES)
+        float2 texArraySlice : TEXCOORD3; // .x = per-vertex texture-array slice index, .y = governing toggle bitmask
+    #endif
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
@@ -39,7 +39,10 @@ struct GzVertexOutput
     UNITY_LIGHTING_COORDS(6,7)
     float4 screenPos : TEXCOORD8;          // Screen position for depth fade
     float3 worldPos : TEXCOORD9;           // World position
-    
+    #ifdef USE_TEXTURE_ARRAYS
+        nointerpolation float arraySlice : TEXCOORD10; // per-vertex array slice (flat)
+    #endif
+
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
 };
@@ -56,14 +59,13 @@ struct GzVertexOutputAdd
     float3 worldPos : TEXCOORD5;
     UNITY_LIGHTING_COORDS(6, 7)
     float4 screenPos : TEXCOORD8;          // Screen position for depth fade
-    
+    #ifdef USE_TEXTURE_ARRAYS
+        nointerpolation float arraySlice : TEXCOORD10; // per-vertex array slice (flat)
+    #endif
+
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
 };
-
-// ============================================
-// Vertex Shader Helpers
-// ============================================
 
 // Build TBN matrix and output vertex data for ForwardBase
 GzVertexOutput GzVertexBase(GzVertexInput v)
@@ -76,20 +78,34 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
     
     float4 posWorld = mul(unity_ObjectToWorld, v.vertex);
     o.pos = UnityObjectToClipPos(v.vertex);
+    #ifdef USE_OBJECT_TOGGLES
+        // Hidden sources collapse here; everything computed from o.pos below
+        // (screenPos, fog) stays finite and is never rasterized.
+        GzApplyObjectToggle(o.pos, v.texArraySlice.y);
+    #endif
     o.uv = v.uv; // Transform will be applied based on which texture is being sampled
     o.worldPos = posWorld.xyz;
     o.eyeVec.xyz = normalize(posWorld.xyz - _WorldSpaceCameraPos);
+    #ifdef USE_TEXTURE_ARRAYS
+        o.arraySlice = GZ_RESOLVE_SLICE(v);
+    #endif
     
     // Build TBN matrix
     half3 wNormal = UnityObjectToWorldNormal(v.normal);
     half3 wTangent = UnityObjectToWorldDir(v.tangent.xyz);
-    half tangentSign = v.tangent.w * unity_WorldTransformParams.w;
+    // Bitangent sign must not collapse to 0: VRCFury SPS does not preserve tangent.w.
+    half tangentSign = (v.tangent.w < 0.0 ? -1.0 : 1.0) * unity_WorldTransformParams.w;
     half3 wBitangent = cross(wNormal, wTangent) * tangentSign;
     
     // Store TBN matrix rows (consistent with ForwardAdd)
     o.tangentToWorld[0] = float4(wTangent, 0);
     o.tangentToWorld[1] = float4(wBitangent, 0);
     o.tangentToWorld[2] = float4(wNormal, 0);
+
+    #ifdef _LTCGI_WORLD
+        o.tangentToWorld[0].w = v.uv1.x;
+        o.tangentToWorld[1].w = v.uv1.y;
+    #endif
     
     // Ambient or lightmap UVs
     o.ambientOrLightmapUV = 0;
@@ -114,9 +130,10 @@ GzVertexOutput GzVertexBase(GzVertexInput v)
     // We need this for shadow receiving (exactly like Unity Standard)
     UNITY_TRANSFER_LIGHTING(o, v.uv1);
     
-    // Screen position for depth fade (with proper W component for depth)
+    // Screen position for soft depth fade. Eye depth goes in .z so .w stays the
+    // clip-space W needed for the projective depth-texture sample.
     o.screenPos = ComputeScreenPos(o.pos);
-    COMPUTE_EYEDEPTH(o.screenPos.w);
+    COMPUTE_EYEDEPTH(o.screenPos.z);
     
     UNITY_TRANSFER_FOG_COMBINED_WITH_EYE_VEC(o, o.pos);
     
@@ -134,16 +151,25 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
     
     float4 posWorld = mul(unity_ObjectToWorld, v.vertex);
     o.pos = UnityObjectToClipPos(v.vertex);
+    #ifdef USE_OBJECT_TOGGLES
+        // Hidden sources collapse here; everything computed from o.pos below
+        // (screenPos, fog) stays finite and is never rasterized.
+        GzApplyObjectToggle(o.pos, v.texArraySlice.y);
+    #endif
     o.uv = v.uv;
     o.worldPos = posWorld.xyz;
     o.eyeVec.xyz = normalize(posWorld.xyz - _WorldSpaceCameraPos);
-    
+    #ifdef USE_TEXTURE_ARRAYS
+        o.arraySlice = GZ_RESOLVE_SLICE(v);
+    #endif
+
     // Build TBN matrix
     half3 wNormal = UnityObjectToWorldNormal(v.normal);
     half3 wTangent = UnityObjectToWorldDir(v.tangent.xyz);
-    half tangentSign = v.tangent.w * unity_WorldTransformParams.w;
+    // Bitangent sign must not collapse to 0: VRCFury SPS does not preserve tangent.w.
+    half tangentSign = (v.tangent.w < 0.0 ? -1.0 : 1.0) * unity_WorldTransformParams.w;
     half3 wBitangent = cross(wNormal, wTangent) * tangentSign;
-    
+
     // Calculate light direction (exactly like Unity Standard shader)
     float3 lightDir = _WorldSpaceLightPos0.xyz - o.worldPos * _WorldSpaceLightPos0.w;
     #ifndef USING_DIRECTIONAL_LIGHT
@@ -158,19 +184,16 @@ GzVertexOutputAdd GzVertexAdd(GzVertexInput v)
     // We need this for shadow receiving and lighting (exactly like Unity Standard)
     UNITY_TRANSFER_LIGHTING(o, v.uv1);
     
-    // Screen position for depth fade (with proper W component for depth)
+    // Screen position for soft depth fade. Eye depth goes in .z so .w stays the
+    // clip-space W needed for the projective depth-texture sample.
     o.screenPos = ComputeScreenPos(o.pos);
-    COMPUTE_EYEDEPTH(o.screenPos.w);
+    COMPUTE_EYEDEPTH(o.screenPos.z);
     
     // Fog coordinates combined with eye vector
     UNITY_TRANSFER_FOG_COMBINED_WITH_EYE_VEC(o, o.pos);
     
     return o;
 }
-
-// ============================================
-// TBN and Normal Helpers
-// ============================================
 
 // Extract TBN matrix from vertex output
 half3x3 GzGetTBN(GzVertexOutput i)
@@ -225,10 +248,6 @@ half3 GzSampleNormalMap(sampler2D normalMap, float2 uv, half scale, half3x3 TBN)
     return normalize(mul(normalTS, TBN));
 }
 
-// ============================================
-// Final Output Helpers
-// ============================================
-
 // Apply final output with transparency
 half4 GzFinalOutput(half3 color, half alpha)
 {
@@ -244,10 +263,6 @@ half4 GzFinalOutputAdd(half3 color)
 {
     return half4(color, 0);
 }
-
-// ============================================
-// Utility Functions
-// ============================================
 
 // Transform UV with texture ST
 float2 GzTransformUV(float2 uv, float4 st)

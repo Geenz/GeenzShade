@@ -5,16 +5,14 @@
  * Copyright (c) 2025 Geenz
  */
 
-// ForwardBase pass body. Shared by every quality-tier SubShader in GzPBR.shader.
-// Each SubShader's Pass shell sets GZ_QUALITY_TIER then #includes this file.
-// Render state (Tags/Blend/etc) stays in the .shader.
+// Pass shells in GzPBR.shader define GZ_QUALITY_TIER before including this file.
 
 #ifndef GZ_FORWARD_BASE_PASS_INCLUDED
 #define GZ_FORWARD_BASE_PASS_INCLUDED
 
 #pragma target 3.0
-#pragma vertex vert
-#pragma fragment frag
+// NOTE: #pragma vertex/fragment live in the .shader pass shells (not here) so
+// VRCFury's SPS patcher can find them - it scans pass text, not includes.
 #pragma multi_compile_fwdbase
 #pragma multi_compile_fog
 #pragma multi_compile_instancing
@@ -39,6 +37,18 @@
 #pragma shader_feature_local USE_VRC_LIGHT_VOLUMES
 #pragma shader_feature_local USE_SPECULAR_ANTIALIASING
 #pragma shader_feature_local USE_SSR
+#pragma shader_feature_local USE_TEXTURE_ARRAYS
+#pragma shader_feature_local USE_SHARED_SAMPLER
+#pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
+#pragma shader_feature_local USE_AUX_DATA
+#pragma shader_feature_local USE_AUX_THICKNESS
+#pragma shader_feature_local USE_SOFT_DEPTH
+#pragma shader_feature_local USE_SS_SHADOWS
+#pragma shader_feature_local USE_OBJECT_TOGGLES
+// Emission wave keywords stay in ForwardBase only.
+#pragma shader_feature_local _EMISSIONWAVE_OFF _EMISSIONWAVE_PULSE _EMISSIONWAVE_RIPPLE
+#pragma shader_feature_local _LTCGI_OFF _LTCGI_WORLD _LTCGI_AVATAR
+#pragma shader_feature_local _FACECULLSOURCE_HARDWARE _FACECULLSOURCE_TEXTURE
 
 #pragma shader_feature_local _RENDERMODE_OPAQUE _RENDERMODE_CUTOUT _RENDERMODE_TRANSPARENT _RENDERMODE_PREMULTIPLIEDALPHA
 #pragma shader_feature_local _VERTEXLIGHTS_OFF _VERTEXLIGHTS_ON
@@ -53,17 +63,34 @@
 // Include our modular system
 #include "../GzTier.cginc"
 #include "../GzProperties.cginc"
+#include "../GzDepth.cginc"
 #include "../GzPassHelpers.cginc"
 #include "../GzMaterialSampling.cginc"
 #include "../GzLightGathering.cginc"
 #include "../GzLayerCalculations.cginc"
+// After GzTier.cginc for GZ_EMISSION_WAVE and after GzProperties.cginc for the uniforms.
+#include "../GzEmissionWave.cginc"
+
+// After GzEmissionWave.cginc so AudioLink keeps its first-include shape if LTCGI's config pulls it in.
+#if defined(_LTCGI_WORLD) || defined(_LTCGI_AVATAR)
+    #ifdef _LTCGI_AVATAR
+        #define LTCGI_AVATAR_MODE
+    #endif
+
+    #ifdef SHADER_API_MOBILE
+        #define LTCGI_FAST_SAMPLING
+        #define LTCGI_DISABLE_LUT2
+    #endif
+
+    #include "Packages/at.pimaker.ltcgi/Shaders/LTCGI.cginc"
+#endif
 
 GzVertexOutput vert(GzVertexInput v)
 {
     return GzVertexBase(v);
 }
 
-half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
+half4 frag(GzVertexOutput i, bool facing : SV_IsFrontFace) : SV_Target
 {
     UNITY_SETUP_INSTANCE_ID(i);
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
@@ -73,11 +100,27 @@ half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
 
     // Sample material data with view direction and facing info
     // This handles normal flipping for back faces internally
-    GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBN(i), viewDir, i.worldPos, facing < 0);
+    #ifdef USE_TEXTURE_ARRAYS
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBN(i), viewDir, i.worldPos, !facing, i.arraySlice);
+    #else
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBN(i), viewDir, i.worldPos, !facing);
+    #endif
 
     // Alpha test for cutout mode
     #ifdef _RENDERMODE_CUTOUT
         clip(matData.alpha - _AlphaCutoff);
+    #endif
+
+    // Material must render Cull Off so both faces reach here.
+    #if defined(_FACECULLSOURCE_TEXTURE)
+        #ifdef USE_TEXTURE_ARRAYS
+            float gzCullSlice = i.arraySlice;
+        #else
+            float gzCullSlice = 0;
+        #endif
+        float2 gzCullUV = i.uv * GZ_TEX_ST(_AuxDataTexture).xy + GZ_TEX_ST(_AuxDataTexture).zw;
+        half gzCullMode = round(GZ_SAMPLE_TEX(_AuxDataTexture, gzCullUV, gzCullSlice).b * 2.0);
+        if (gzCullMode > 0.5 && ((gzCullMode >= 1.5) == facing)) discard;
     #endif
 
     // Create direct lighting context FIRST to get attenuation
@@ -89,9 +132,6 @@ half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
                                                      viewDir,
                                                      matData.roughness, matData.occlusion, i.ambientOrLightmapUV, dirLightCtx.lightAtten);
 
-    // Screen-space reflections (Tier 0 only, per Mochie's technique) composited
-    // over the probe/cubemap indirect specular. Misses / mirrors / high roughness
-    // return 0 alpha and we keep the probe result. i.pos.xy is the pixel coord.
     #ifdef GZ_USE_SSR
         half3 ssrReflDir = reflect(-viewDir, matData.normal);
         float ssrNoise = GzSSRNoise(i.pos.xy);
@@ -101,9 +141,27 @@ half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
         indirect.specular = lerp(indirect.specular, ssr.rgb, ssr.a * saturate(_SSRStrength));
     #endif
 
+    #if defined(_LTCGI_WORLD) || defined(_LTCGI_AVATAR)
+        half3 ltcgiDiffuse = 0;
+        half3 ltcgiSpecular = 0;
+        float2 ltcgiLightmapUV = 0;
+        #ifdef _LTCGI_WORLD
+            ltcgiLightmapUV = float2(i.tangentToWorld[0].w, i.tangentToWorld[1].w);
+        #endif
+        LTCGI_Contribution(i.worldPos, matData.normal, viewDir, matData.roughness, ltcgiLightmapUV, ltcgiDiffuse, ltcgiSpecular);
+        indirect.diffuse += ltcgiDiffuse;
+        indirect.specular += ltcgiSpecular;
+    #endif
+
     // Initialize final color with emissive
     // Apply clearcoat attenuation to emission per glTF spec
     half3 emission = matData.emissive * matData.emissiveStrength;
+    // Must precede the clearcoat attenuation so the coat also dims the crest.
+    #ifdef GZ_EMISSION_WAVE
+        emission = GzApplyEmissionWave(emission, matData.emissiveSdf,
+                                       matData.emissiveStrength, i.worldPos,
+                                       matData.normal, viewDir);
+    #endif
     emission = GzAttenuateEmissionByClearcoat(emission, matData, viewDir);
     half3 finalColor = emission;
 
@@ -133,6 +191,12 @@ half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
         if (shCtx.lightAtten > 0)
         {
             half3 shLight = GzEvaluateLayerStack(matData, shCtx);
+            // Screen-space shadow from the SH dominant direction: march toward the
+            // light against the depth buffer and attenuate where occluded.
+            #if defined(USE_SS_SHADOWS)
+                half ssShadow = GzTraceScreenSpaceShadow(i.worldPos, shCtx.lightDir, GzSSRNoise(i.pos.xy));
+                shLight *= 1.0 - ssShadow * saturate(_SSShadowIntensity);
+            #endif
             finalColor += shLight * shCtx.lightColor;
         }
     #endif
@@ -162,13 +226,18 @@ half4 frag(GzVertexOutput i, fixed facing : VFACE) : SV_Target
     finalColor += GzEvaluateLayerStackIndirect(matData, indirectCtx,
                                               indirect.diffuse, indirect.specular, clearcoatEnvSpecular);
 
-    // VRC Light Volumes — per-channel directional evaluation
+    // VRC Light Volumes - per-channel directional evaluation
     #ifdef USE_VRC_LIGHT_VOLUMES
         finalColor += GzEvaluateLightVolumes(i.worldPos, matData.normal, viewDir, matData);
     #endif
 
     // Apply fog (fog coord is stored in eyeVec.w)
     UNITY_APPLY_FOG(i.eyeVec.w, finalColor);
+
+    // Must run before the alpha premultiply.
+    #if defined(USE_SOFT_DEPTH) && (defined(_RENDERMODE_TRANSPARENT) || defined(_RENDERMODE_PREMULTIPLIEDALPHA))
+        matData.alpha *= GzSoftDepthFade(i.screenPos, i.screenPos.z, _SoftDepthFadeDistance);
+    #endif
 
     // Premultiply alpha for proper blending
     #ifdef _RENDERMODE_PREMULTIPLIEDALPHA

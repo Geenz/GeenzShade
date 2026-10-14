@@ -19,7 +19,12 @@ struct GzMaterialData
     half3 normal;
     half occlusion;
     half3 emissive;
-    
+    #ifdef GZ_EMISSION_WAVE
+        // Valve/TMP signed distance field: 0.5 is the edge, above is inside.
+        // 1 means "no field" and every wave mode is inert on it - see GzEmissionWave.cginc.
+        half emissiveSdf;
+    #endif
+
     // Derived base properties
     half3 f0;  // Base reflectance
     half3 f90; // Grazing reflectance
@@ -65,7 +70,12 @@ GzMaterialData GzCreateMaterialData()
     data.normal = half3(0, 0, 1);
     data.occlusion = 1;
     data.emissive = half3(0, 0, 0);
-    
+    #ifdef GZ_EMISSION_WAVE
+        // 1.0 is the saturated interior plateau. Both wave modes are provably inert on a
+        // constant field, so a material with no SDF assigned is a no-op rather than a blob.
+        data.emissiveSdf = 1;
+    #endif
+
     data.f0 = half3(0.04, 0.04, 0.04);
     data.f90 = half3(1, 1, 1);
     data.ior = 1.5;
@@ -90,7 +100,7 @@ GzMaterialData GzCreateMaterialData()
     
     data.diffuseTransmissionFactor = 0;
     data.diffuseTransmissionColorFactor = half3(1, 1, 1);
-    
+
     return data;
 }
 
