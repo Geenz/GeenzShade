@@ -12,14 +12,14 @@
 #define GZ_META_PASS_INCLUDED
 
 #pragma target 3.0
-#pragma vertex vert_meta
-#pragma fragment frag_meta
+// NOTE: #pragma vertex/fragment live in the .shader pass shells (SPS patcher).
 
 #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
 #pragma shader_feature_local USE_ORM_TEXTURE
 #pragma shader_feature_local USE_EMISSIVE_TEXTURE
 #pragma shader_feature_local USE_TEXTURE_ARRAYS
 #pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
+#pragma shader_feature_local USE_OBJECT_TOGGLES
 #pragma shader_feature EDITOR_VISUALIZATION
 
 #include "UnityCG.cginc"
@@ -55,6 +55,10 @@ v2f_meta vert_meta(GzVertexInput v)
 {
     v2f_meta o;
     o.pos = UnityMetaVertexPosition(v.vertex, v.uv1, v.uv2, unity_LightmapST, unity_DynamicLightmapST);
+    #ifdef USE_OBJECT_TOGGLES
+        // Hidden sources should not contribute baked emission/albedo either.
+        GzApplyObjectToggle(o.pos, v.texArraySlice.y);
+    #endif
 
     // Use same UV transformation as main shader
     o.uv.xy = GzTransformUV(v.uv, GZ_TEX_ST(_BaseColorTexture));
@@ -108,7 +112,7 @@ float4 frag_meta(v2f_meta i) : SV_Target
     half oneMinusReflectivity;
     half3 diffColor = DiffuseAndSpecularFromMetallic(albedo, metallic, specColor, oneMinusReflectivity);
 
-    // Sample emission
+    // Intentionally not modulated by the emission wave, since AudioLink cannot be baked
     half3 emission = _EmissiveFactor.rgb * _EmissionStrength;
     #ifdef USE_EMISSIVE_TEXTURE
         emission *= GZ_SAMPLE_TEX(_EmissiveTexture, i.uv.xy, metaSlice).rgb;

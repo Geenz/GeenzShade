@@ -8,48 +8,56 @@
 #ifndef GZ_TEXTURE_ARRAYS_INCLUDED
 #define GZ_TEXTURE_ARRAYS_INCLUDED
 
-// ============================================================================
-// Texture Array Support (advanced)
-//
-// When USE_TEXTURE_ARRAYS is enabled, every 2D input texture is switched to a
-// Texture2DArray and sampled with a per-vertex slice index (carried in UV3.x).
-// This lets many meshes be merged into one object/material where each vertex
-// selects which texture set to sample.
-//
-// A Unity texture property's type is fixed (2D vs 2DArray), so the array
-// variants are SEPARATE properties named "<name>Array" (e.g. _BaseColorTexture
-// -> _BaseColorTextureArray). These macros select the right property + sampler
-// per variant so call sites stay identical:
-//
-//   GZ_DECLARE_TEX(_BaseColorTexture);                       // declaration
-//   float4 GZ_TEX_ST(_BaseColorTexture);                     // tiling/offset
-//   half4 c = GZ_SAMPLE_TEX(_BaseColorTexture, uv, slice);   // sample
-//
-// In 2D mode the slice argument is ignored.
-// ============================================================================
+// Array variants are separate properties named <name>Array, e.g. _BaseColorTextureArray.
 
 #ifdef USE_TEXTURE_ARRAYS
 
-    #define GZ_DECLARE_TEX(name)            UNITY_DECLARE_TEX2DARRAY(name##Array)
-    #define GZ_SAMPLE_TEX(name, uv, slice)  UNITY_SAMPLE_TEX2DARRAY(name##Array, float3((uv), (slice)))
+    #if defined(USE_SHARED_SAMPLER) && defined(UNITY_SEPARATE_TEXTURE_SAMPLER)
+        #if defined(USE_BASE_COLOR_TEXTURE)
+            #define GZ_SHARED_SAMPLER sampler_BaseColorTextureArray
+        #elif defined(USE_ORM_TEXTURE)
+            #define GZ_SHARED_SAMPLER sampler_ORMTextureArray
+        #elif defined(USE_NORMAL_TEXTURE)
+            #define GZ_SHARED_SAMPLER sampler_NormalTextureArray
+        #endif
+    #endif
+
+    #ifdef GZ_SHARED_SAMPLER
+        SamplerState GZ_SHARED_SAMPLER;
+        #define GZ_DECLARE_TEX(name)            UNITY_DECLARE_TEX2DARRAY_NOSAMPLER(name##Array)
+        #define GZ_SAMPLE_TEX(name, uv, slice)  name##Array.Sample(GZ_SHARED_SAMPLER, float3((uv), (slice)))
+    #else
+        #define GZ_DECLARE_TEX(name)            UNITY_DECLARE_TEX2DARRAY(name##Array)
+        #define GZ_SAMPLE_TEX(name, uv, slice)  UNITY_SAMPLE_TEX2DARRAY(name##Array, float3((uv), (slice)))
+    #endif
     #define GZ_TEX_ST(name)                 name##Array##_ST
 
 #else
 
-    #define GZ_DECLARE_TEX(name)            sampler2D name
-    #define GZ_SAMPLE_TEX(name, uv, slice)  tex2D(name, (uv))
+    #if defined(USE_SHARED_SAMPLER) && defined(UNITY_SEPARATE_TEXTURE_SAMPLER)
+        #if defined(USE_BASE_COLOR_TEXTURE)
+            #define GZ_SHARED_SAMPLER sampler_BaseColorTexture
+        #elif defined(USE_ORM_TEXTURE)
+            #define GZ_SHARED_SAMPLER sampler_ORMTexture
+        #elif defined(USE_NORMAL_TEXTURE)
+            #define GZ_SHARED_SAMPLER sampler_NormalTexture
+        #endif
+    #endif
+
+    #ifdef GZ_SHARED_SAMPLER
+        SamplerState GZ_SHARED_SAMPLER;
+        #define GZ_DECLARE_TEX(name)            UNITY_DECLARE_TEX2D_NOSAMPLER(name)
+        #define GZ_SAMPLE_TEX(name, uv, slice)  name.Sample(GZ_SHARED_SAMPLER, (uv))
+    #else
+        #define GZ_DECLARE_TEX(name)            sampler2D name
+        #define GZ_SAMPLE_TEX(name, uv, slice)  tex2D(name, (uv))
+    #endif
     #define GZ_TEX_ST(name)                 name##_ST
 
 #endif
 
 #ifdef USE_TEXTURE_ARRAYS
-    // Where the array layer index comes from (static per-material choice, selected
-    // by the _ARRAYINDEXSOURCE_* shader_feature so only the chosen path compiles):
-    //   _ARRAYINDEXSOURCE_VERTEX         -> per-vertex (UV3.x)   [merged meshes]
-    //   _ARRAYINDEXSOURCE_MATERIALINSTANCE -> material / per-instance (_ArraySlice)
-    // _ArraySlice is an instanced property: set it on the material (the default
-    // for every instance) or override per-instance via a MaterialPropertyBlock
-    // for GPU-instanced batching.
+    // _ARRAYINDEXSOURCE_* picks per-vertex UV3.x or the instanced _ArraySlice.
     UNITY_INSTANCING_BUFFER_START(GzArrayProps)
         UNITY_DEFINE_INSTANCED_PROP(float, _ArraySlice)
     UNITY_INSTANCING_BUFFER_END(GzArrayProps)

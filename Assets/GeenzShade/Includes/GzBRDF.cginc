@@ -10,17 +10,9 @@
 
 #include "GzMath.cginc"
 
-// ============================================
-// Constants
-// ============================================
-
 #define GZ_MIN_ROUGHNESS 0.1  // Minimum roughness to prevent HDR bloom and singularities
 
-// ============================================
-// Core BRDF Components
-// ============================================
-
-// Roughness-dependent Fresnel (based on Fdez-Agüera)
+// Roughness-dependent Fresnel
 // This is a simplified version without BRDF LUT
 half3 GzFresnelSchlick(half3 f0, half3 f90, half cosTheta, half roughness)
 {

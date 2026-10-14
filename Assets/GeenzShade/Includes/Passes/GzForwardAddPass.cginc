@@ -11,8 +11,7 @@
 #ifndef GZ_FORWARD_ADD_PASS_INCLUDED
 #define GZ_FORWARD_ADD_PASS_INCLUDED
 
-#pragma vertex vert
-#pragma fragment frag
+// NOTE: #pragma vertex/fragment live in the .shader pass shells (SPS patcher).
 #pragma multi_compile_fwdadd_fullshadows
 #pragma multi_compile_fog
 #pragma multi_compile_instancing
@@ -35,9 +34,12 @@
 #pragma shader_feature_local USE_DIFFUSE_TRANSMISSION_TEXTURE
 #pragma shader_feature_local USE_SPECULAR_ANTIALIASING
 #pragma shader_feature_local USE_TEXTURE_ARRAYS
+#pragma shader_feature_local USE_SHARED_SAMPLER
 #pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
 #pragma shader_feature_local USE_AUX_DATA
 #pragma shader_feature_local USE_AUX_THICKNESS
+#pragma shader_feature_local USE_SOFT_DEPTH
+#pragma shader_feature_local USE_OBJECT_TOGGLES
 #pragma shader_feature_local _FACECULLSOURCE_HARDWARE _FACECULLSOURCE_TEXTURE
 
 #pragma shader_feature_local _RENDERMODE_OPAQUE _RENDERMODE_CUTOUT _RENDERMODE_TRANSPARENT _RENDERMODE_PREMULTIPLIEDALPHA
@@ -51,6 +53,7 @@
 // Include our modular system
 #include "../GzTier.cginc"
 #include "../GzProperties.cginc"
+#include "../GzDepth.cginc"
 #include "../GzPassHelpers.cginc"
 #include "../GzMaterialSampling.cginc"
 #include "../GzLightGathering.cginc"
@@ -61,7 +64,7 @@ GzVertexOutputAdd vert(GzVertexInput v)
     return GzVertexAdd(v);
 }
 
-half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
+half4 frag(GzVertexOutputAdd i, bool facing : SV_IsFrontFace) : SV_Target
 {
     UNITY_SETUP_INSTANCE_ID(i);
     UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
@@ -71,9 +74,9 @@ half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
 
     // Sample material data with view direction and facing info
     #ifdef USE_TEXTURE_ARRAYS
-        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, facing < 0, i.arraySlice);
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, !facing, i.arraySlice);
     #else
-        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, facing < 0);
+        GzMaterialData matData = GzSampleMaterialComplete(i.uv, GzGetTBNAdd(i), viewDir, i.worldPos, !facing);
     #endif
 
     // Alpha test for cutout mode
@@ -81,7 +84,7 @@ half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
         clip(matData.alpha - _AlphaCutoff);
     #endif
 
-    // Texture-driven face culling (matches ForwardBase) — reads the aux B channel
+    // Texture-driven face culling (matches ForwardBase) - reads the aux B channel
     // directly, independent of the Aux Data feature.
     #if defined(_FACECULLSOURCE_TEXTURE)
         #ifdef USE_TEXTURE_ARRAYS
@@ -91,7 +94,7 @@ half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
         #endif
         float2 gzCullUV = i.uv * GZ_TEX_ST(_AuxDataTexture).xy + GZ_TEX_ST(_AuxDataTexture).zw;
         half gzCullMode = round(GZ_SAMPLE_TEX(_AuxDataTexture, gzCullUV, gzCullSlice).b * 2.0);
-        if (gzCullMode > 0.5 && ((gzCullMode >= 1.5) == (facing >= 0))) discard;
+        if (gzCullMode > 0.5 && ((gzCullMode >= 1.5) == facing)) discard;
     #endif
 
     // Create lighting context for additive light
@@ -110,6 +113,14 @@ half4 frag(GzVertexOutputAdd i, fixed facing : VFACE) : SV_Target
 
     // Apply alpha
     half alpha = matData.alpha;
+
+    // Soft depth fade (matches ForwardBase) so additive lights also ease out near
+    // the intersection seam. Scales this pass's contribution by the same factor.
+    #if defined(USE_SOFT_DEPTH) && (defined(_RENDERMODE_TRANSPARENT) || defined(_RENDERMODE_PREMULTIPLIEDALPHA))
+        half softFade = GzSoftDepthFade(i.screenPos, i.screenPos.z, _SoftDepthFadeDistance);
+        color *= softFade;
+        alpha *= softFade;
+    #endif
 
     // Premultiply alpha for proper blending
     #ifdef _RENDERMODE_PREMULTIPLIEDALPHA

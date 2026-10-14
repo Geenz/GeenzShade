@@ -13,9 +13,7 @@ using UnityEngine;
 
 namespace GeenzShade
 {
-    // Lightweight utility for packing a set of equally-sized Texture2Ds into a
-    // Texture2DArray asset (one input texture per slice). The slice order is the
-    // list order, which is the layer index the GzPBR shader samples via UV3.x.
+    // Slice order is list order, which is the layer index GzPBR samples via UV3.x.
     public class GzTextureArrayBuilder : EditorWindow
     {
         private readonly List<Texture2D> _slices = new List<Texture2D>();
@@ -66,10 +64,10 @@ namespace GeenzShade
                 EditorGUILayout.LabelField(i.ToString(), GUILayout.Width(24));
                 _slices[i] = (Texture2D)EditorGUILayout.ObjectField(_slices[i], typeof(Texture2D), false);
                 using (new EditorGUI.DisabledScope(i == 0))
-                    if (GUILayout.Button("▲", GUILayout.Width(24))) { Swap(i, i - 1); }
+                    if (GUILayout.Button("^", GUILayout.Width(24))) { Swap(i, i - 1); }
                 using (new EditorGUI.DisabledScope(i == _slices.Count - 1))
-                    if (GUILayout.Button("▼", GUILayout.Width(24))) { Swap(i, i + 1); }
-                if (GUILayout.Button("✕", GUILayout.Width(24))) { _slices.RemoveAt(i); GUIUtility.ExitGUI(); }
+                    if (GUILayout.Button("v", GUILayout.Width(24))) { Swap(i, i + 1); }
+                if (GUILayout.Button("x", GUILayout.Width(24))) { _slices.RemoveAt(i); GUIUtility.ExitGUI(); }
                 EditorGUILayout.EndHorizontal();
             }
             EditorGUILayout.EndScrollView();

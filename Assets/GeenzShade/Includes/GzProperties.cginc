@@ -13,12 +13,7 @@
 // Single source of truth for all shader properties
 // Shared between ForwardBase and ForwardAdd passes
 
-// ============================================
-// Texture Declarations
-// ============================================
-// Declared via GZ_DECLARE_TEX so they become Texture2DArrays (sampled by a
-// per-vertex slice) when USE_TEXTURE_ARRAYS is on. The 2DArray variants are
-// separate properties named "<name>Array" in the shader (see GzTextureArrays.cginc).
+// Array variants are shader properties named "<name>Array" (see GzTextureArrays.cginc).
 
 // Base Textures
 GZ_DECLARE_TEX(_BaseColorTexture);
@@ -29,6 +24,7 @@ GZ_DECLARE_TEX(_NormalTexture);
 float4 GZ_TEX_ST(_NormalTexture);
 GZ_DECLARE_TEX(_EmissiveTexture);
 float4 GZ_TEX_ST(_EmissiveTexture);
+// Wave SDF is in _EmissiveTexture alpha: Tier 0 ForwardBase is at the 16-sampler cap.
 
 // Extension Textures
 GZ_DECLARE_TEX(_SpecularTexture);
@@ -53,10 +49,6 @@ half _AuxSheenRimMin, _AuxSheenRimMax;
 GZ_DECLARE_TEX(_AuxDataTexture2);
 float4 GZ_TEX_ST(_AuxDataTexture2);
 half _AuxThicknessRangeMin, _AuxThicknessRangeMax;
-
-// ============================================
-// Material Properties
-// ============================================
 
 // Base Properties
 half _Roughness;
@@ -122,33 +114,46 @@ half _SSRHeight;
 half _SSREdgeFade;
 half _SSRMaxRoughness;
 
-// ============================================
-// Shader Feature Definitions
-// ============================================
-// These should be defined via #pragma shader_feature_local in the main shader
-// Listed here for documentation:
-//
-// Texture Enable Features:
-// - USE_BASE_COLOR_TEXTURE
-// - USE_MRO_TEXTURE  
-// - USE_NORMAL_TEXTURE
-// - USE_CLEARCOAT_NORMAL_TEXTURE
-// - USE_EMISSIVE_TEXTURE
-// - USE_SPECULAR_TEXTURE
-// - USE_CLEARCOAT_IRIDESCENCE_TEXTURE
-// - USE_SHEEN_TEXTURE
-//
-// Extension Features:
-// - USE_SPECULAR_EXTENSION
-// - USE_CLEARCOAT
-// - USE_SHEEN
-// - USE_IRIDESCENCE
-// - USE_ENVIRONMENT_REFLECTION
-// - USE_VRC_LIGHT_VOLUMES
-//
-// Rendering Features:
-// - _VERTEXLIGHTS_ON / _VERTEXLIGHTS_OFF
-// - _SHDOMINANTLIGHT_ON / _SHDOMINANTLIGHT_OFF
-// - _RENDERMODE_OPAQUE / _RENDERMODE_CUTOUT / _RENDERMODE_TRANSPARENT
+// Soft depth fade for transparent surfaces (USE_SOFT_DEPTH). Needs a depth texture.
+half _SoftDepthFadeDistance;
+
+// Screen-space shadows from the SH dominant light (USE_SS_SHADOWS). Needs a depth texture.
+half _SSShadowSteps;
+half _SSShadowDistance;
+half _SSShadowThickness;
+half _SSShadowBias;
+half _SSShadowIntensity;
+
+float4 _EmissionWaveAxis;      // xyz = object-space travel direction, w = origin offset (default 0,1,0,0 = upward)
+half   _EmissionWaveFresnel;   // 0 = off, 1 = full V.N falloff on the wave
+half   _EmissionWaveFresnelPower;
+half   _EmissionWaveFresnelMultiplier;
+half   _EmissionWaveFresnelClampMin;
+half   _EmissionWaveFresnelClampMax;
+// Per AudioLink band: toggle + crest color. All four can run at once; each wave
+// uses the SAME controls below, only the color differs.
+half   _EmissionWaveBass;
+half   _EmissionWaveLowMid;
+half   _EmissionWaveHighMid;
+half   _EmissionWaveTreble;
+half4  _EmissionWaveBassColor;
+half4  _EmissionWaveLowMidColor;
+half4  _EmissionWaveHighMidColor;
+half4  _EmissionWaveTrebleColor;
+half   _EmissionWaveGain;
+half   _EmissionWaveGate;
+half   _EmissionWaveTravel;
+half   _EmissionWaveSoftness;      // edge width of the wave itself - the main soft knob
+half   _EmissionWaveEdgeSoftness;  // screen-space AA multiplier, a lower bound on the above
+half   _EmissionWaveGlow;
+half   _EmissionWaveGrow;      // Pulse only
+half   _EmissionWavePivot;     // Pulse only
+half   _EmissionWaveFrequency; // Ripple only
+half   _EmissionWaveRingWidth; // Ripple only
+half   _EmissionWaveSpeed;     // Ripple only
+half   _EmissionWaveSmoothing; // Ripple only
+half   _EmissionWaveEdgeFade;  // Ripple only
+half   _EmissionWaveSdfMul;      // Ripple only - SDF mask strength
+half   _EmissionWaveSdfFalloff;  // Ripple only - SDF mask power
 
 #endif // GZ_PROPERTIES_INCLUDED

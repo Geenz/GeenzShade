@@ -13,16 +13,6 @@ using UnityEngine;
 
 namespace GeenzShade
 {
-    // Utility (+ public API) for baking GzPBR auxiliary data textures.
-    //
-    // Two flows:
-    //  - Single swatch: read one material's params (IOR, Iridescence IOR, Sheen
-    //    Rim, Cull Mode) into a solid texture and assign it back — no re-entry.
-    //  - Combined from a Renderer: per selected material slot (= submesh), encode
-    //    that material's params and rasterize ONLY that submesh's UV footprint into
-    //    one shared texture. Other submeshes are never touched, so overlapping
-    //    submesh UVs are the artist's call (uncheck slots to scope narrowly). The
-    //    result is assigned back to the chosen materials.
     public class GzAuxDataBaker : EditorWindow
     {
         private enum BakeMode { BakeOnly, BakeAndAssign }
@@ -43,7 +33,7 @@ namespace GeenzShade
         private string _outputFolder = "Assets";
         private string _outputName = "AuxData";
 
-        // Single-swatch state (params read from the material — never re-entered)
+        // Single-swatch state (params read from the material - never re-entered)
         private int _solidSize = 4;
         private Material _target;
 
@@ -159,7 +149,7 @@ namespace GeenzShade
             EditorGUILayout.HelpBox(
                 "Bakes the checked material slots into one texture using each submesh's UVs (slot = submesh). " +
                 "Each material's own params (incl. Cull Mode -> B) are read and written only where that submesh's UVs land. " +
-                "UVs are not validated — uncheck slots to scope narrowly if submeshes overlap in UV space.", MessageType.Info);
+                "UVs are not validated - uncheck slots to scope narrowly if submeshes overlap in UV space.", MessageType.Info);
 
             _renderer = (Renderer)EditorGUILayout.ObjectField("Source Renderer", _renderer, typeof(Renderer), true);
 
@@ -260,9 +250,7 @@ namespace GeenzShade
             }
         }
 
-        // Create the asset, or update it in place if one already exists at the path
-        // (preserves the GUID so materials keep their reference on re-bake). Returns
-        // the persisted texture to use for assignment.
+        // Updates an existing asset in place to preserve its GUID across re-bakes.
         private static Texture2D SaveAndSelect(Texture2D tex, string path)
         {
             var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
@@ -282,17 +270,10 @@ namespace GeenzShade
             return tex;
         }
 
-        // ============================================================
-        // Public API for project tooling
-        // ============================================================
-
         /// <summary>Build a solid aux data Texture2D encoding one parameter set.</summary>
         public static Texture2D BakeSolid(float ior, float iridescenceIOR, GzFaceCull faceCull, float sheenRimBoost, int size = 4)
             => BakeSolidColor(GzAuxData.Encode(ior, iridescenceIOR, faceCull, sheenRimBoost), size);
 
-        /// <summary>Build a solid aux data Texture2D from a material's existing params
-        /// (IOR, Iridescence IOR, Sheen Rim Boost, Cull Mode). No values are re-entered.
-        /// Optional remap ranges (x=min, y=max); null = canonical ranges.</summary>
         public static Texture2D BakeSolidFromMaterial(Material material, int size = 4,
             Vector2? iorRange = null, Vector2? iridIorRange = null, Vector2? sheenRimRange = null)
             => BakeSolidColor(EncodeFromMaterial(material, iorRange, iridIorRange, sheenRimRange), size);
@@ -308,14 +289,7 @@ namespace GeenzShade
             return tex;
         }
 
-        /// <summary>
-        /// Bake the chosen material slots of a Renderer into one UV-space aux texture.
-        /// For each included slot, the matching submesh's UVs (from uvChannel, 0-7) are
-        /// rasterized with that material's encoded params (Cull Mode -> B channel).
-        /// includeSlots == null bakes all slots. UVs are not validated; overlapping submesh
-        /// UVs overwrite (later slot wins). The shader must sample the aux texture from the
-        /// same UV channel at runtime — that's the artist's responsibility.
-        /// </summary>
+        /// <summary>The shader must sample the aux texture from the same UV channel used here.</summary>
         public static Texture2D BakeFromRenderer(Renderer renderer, bool[] includeSlots, int resolution, int uvChannel = 0,
             Vector2? iorRange = null, Vector2? iridIorRange = null, Vector2? sheenRimRange = null)
         {
@@ -361,10 +335,6 @@ namespace GeenzShade
             return tex;
         }
 
-        // ============================================================
-        // Helpers
-        // ============================================================
-
         private static Texture2D NewAuxTexture(int size, string name)
         {
             return new Texture2D(size, size, TextureFormat.RGBA32, false, true) // linear data
@@ -386,9 +356,7 @@ namespace GeenzShade
         private static GzFaceCull ReadCull(Material m)
         {
             if (m == null) return GzFaceCull.Off;
-            // In Texture cull mode the render _Cull is forced Off (double-sided), so the
-            // artist's intent lives in _FaceCullBake. Prefer it there; otherwise read the
-            // hardware _Cull. UnityEngine.Rendering.CullMode: Off=0, Front=1, Back=2.
+            // _Cull and _FaceCullBake hold CullMode values (Front=1, Back=2), not GzFaceCull's.
             bool textureMode = m.HasProperty("_FaceCullSource") && m.GetFloat("_FaceCullSource") >= 0.5f;
             float cull;
             if (textureMode && m.HasProperty("_FaceCullBake")) cull = m.GetFloat("_FaceCullBake");
@@ -446,10 +414,7 @@ namespace GeenzShade
             EditorUtility.SetDirty(mat);
         }
 
-        // Assign a baked aux texture to a material's 2D Aux Data slot, turn on the
-        // Auxiliary Data feature, and write the decode ranges so they match the bake
-        // (this is what prevents iridescence/IOR artifacts from range drift). If a
-        // cull mode is involved, switch Face Cull Source to Texture (needs Cull Off).
+        // Decode ranges are written to the material so they match the bake.
         private static void AssignToMaterial(Material mat, Texture2D tex, GzFaceCull cull,
             Vector2 iorRange, Vector2 iridIorRange, Vector2 sheenRimRange)
         {
@@ -473,7 +438,7 @@ namespace GeenzShade
                 // force Cull Off for double-sided rendering. GzFaceCull -> CullMode.
                 int cullModeInt = cull == GzFaceCull.Back ? 2 : (cull == GzFaceCull.Front ? 1 : 0);
                 SetIfHas(mat, "_FaceCullBake", cullModeInt);
-                if (mat.HasProperty("_Cull")) mat.SetInt("_Cull", 0); // Off — in-shader culling needs double-sided
+                if (mat.HasProperty("_Cull")) mat.SetInt("_Cull", 0); // Off - in-shader culling needs double-sided
             }
 
             EditorUtility.SetDirty(mat);

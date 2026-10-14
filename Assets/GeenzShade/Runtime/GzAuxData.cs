@@ -21,17 +21,7 @@ namespace GeenzShade
         public float sheenRimBoost;  // 0..10
     }
 
-    /// <summary>
-    /// Encode/decode for the GzPBR auxiliary data texture. This is the canonical
-    /// API for project tooling that authors aux textures.
-    ///
-    /// Channel layout (must match GzMaterialSampling.cginc):
-    ///   R = IOR (0..4), G = Iridescence IOR (0..4),
-    ///   B = Face Cull (0=off, 0.5=back, 1=front), A = Sheen Rim Boost (0..10).
-    ///
-    /// The texture must be sampled as LINEAR data (sRGB off) and is best left
-    /// uncompressed so the packed scalar values survive intact.
-    /// </summary>
+    /// <summary>Layout must match GzMaterialSampling.cginc, stored as uncompressed linear data.</summary>
     public static class GzAuxData
     {
         public const float IorMin = 0f, IorMax = 4f;

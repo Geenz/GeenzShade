@@ -14,10 +14,6 @@
 #include "GzPassHelpers.cginc"  // Contains GzTransformUV
 #include "GzIridescence.cginc"  // For evalIridescence function
 
-// ============================================
-// Specular Antialiasing
-// ============================================
-
 // Apply specular antialiasing to reduce aliasing artifacts
 // Increases roughness at grazing angles and with camera distance
 half ApplySpecularAntialiasing(half roughness, half NoV, float3 worldPos)
@@ -71,10 +67,14 @@ GzMaterialData GzSampleMaterial(float2 baseUV, float arraySlice)
         matData.occlusion = 1.0;
     #endif
     
-    // Emissive
+    // Emissive alpha is the wave SDF, so one fetch feeds both without an extra sampler.
     #ifdef USE_EMISSIVE_TEXTURE
         float2 uvEmissive = GzTransformUV(baseUV, GZ_TEX_ST(_EmissiveTexture));
-        matData.emissive = GZ_SAMPLE_TEX(_EmissiveTexture, uvEmissive, arraySlice).rgb * _EmissiveFactor.rgb;
+        half4 emissiveSample = GZ_SAMPLE_TEX(_EmissiveTexture, uvEmissive, arraySlice);
+        matData.emissive = emissiveSample.rgb * _EmissiveFactor.rgb;
+        #ifdef GZ_EMISSION_WAVE
+            matData.emissiveSdf = emissiveSample.a;
+        #endif
     #else
         matData.emissive = _EmissiveFactor.rgb;
     #endif
@@ -154,17 +154,7 @@ GzMaterialData GzSampleMaterial(float2 baseUV, float arraySlice)
     
     matData.ior = _IOR;
 
-    // Auxiliary packed data texture (advanced). Replaces selected scalar params
-    // from a texture so many parameter variants batch under one material — pairs
-    // with the texture-array slice (a 1xN aux array encodes one param set per
-    // layer). Channels: R=IOR, G=Iridescence IOR, B=Face Cull (0=off, 0.5=back,
-    // 1=front), A=Sheen Rim Boost. The R/G/A remap ranges are material properties
-    // (_Aux*Min/_Aux*Max) so they match whatever the texture was baked with. Only
-    // the active features' params are touched.
-    // Sheen *factor* is intentionally NOT packed: it is mathematically identical
-    // to scaling the sheen colour (it only ever appears as sheenColor*sheenFactor,
-    // including in the albedo-scaling term), so vary per-variant sheen strength
-    // through the sheen colour/texture instead.
+    // Aux channels: R=IOR, G=Iridescence IOR, B=Face Cull, A=Sheen Rim Boost.
     #ifdef USE_AUX_DATA
         float2 uvAux = GzTransformUV(baseUV, GZ_TEX_ST(_AuxDataTexture));
         half4 auxData = GZ_SAMPLE_TEX(_AuxDataTexture, uvAux, arraySlice);
@@ -219,20 +209,12 @@ void GzApplyIridescenceToF0(inout GzMaterialData matData, half NoV)
     #ifdef GZ_USE_IRIDESCENCE
     if (matData.iridescenceFactor > 0)
     {
-        // For iridescence calculation, we need to pass the correct F0:
-        // - For metals: baseColor (already in matData.f0)
-        // - For dielectrics with specular: specularFactor * baseF0 (without color)
-        // Since we've already applied specular extension, we need to reconstruct
         half3 iridescenceInputF0 = matData.f0;
         
         #ifdef USE_SPECULAR_EXTENSION
         if (matData.metallic < 1.0)
         {
-            // For dielectrics with specular extension, per spec we should pass
-            // specular_weight * base_f0 to iridescence (not including specularColor)
-            // We need to undo the specularColor multiplication
-            // Current F0 = min(baseF0 * specularColor, 1) * specularFactor
-            // We want: baseF0 * specularFactor
+            // Spec: dielectrics feed iridescence specularFactor * baseF0, without specularColor.
             half3 baseF0 = GzGetF0FromIOR(matData.ior);
             iridescenceInputF0 = baseF0 * matData.specularFactor;
         }

@@ -5,17 +5,12 @@
  * Copyright (c) 2025 Geenz
  */
 
-// ============================================================================
-// Screen-Space Reflections
-//
 // Adapted from Mochie's Unity Shaders (StandardSSR.cginc), used under the MIT
 // License, Copyright (c) 2020 MochiesCode:
 //   https://github.com/MochiMochiBoboService/Mochies-Unity-Shaders
 //
 // The original screen-space reflection technique was created by
-// error.mdl, Toocanzs, and Xiexe, and reworked by Mochie. This is a port of
-// that work into the GeenzShade structure (view-space ray march, GrabPass
-// capture, stereo-correct screen-space sampling).
+// error.mdl, Toocanzs, and Xiexe, and reworked by Mochie.
 //
 // MIT License notice for the adapted portions:
 //   Permission is hereby granted, free of charge, to any person obtaining a
@@ -24,45 +19,21 @@
 //   and this permission notice shall be included in all copies or substantial
 //   portions of the Software. (Full text: see Mochie's LICENSE.)
 //
-// Deviation from the original: noise is generated procedurally (interleaved
-// gradient noise) instead of sampling a blue-noise texture, to avoid shipping
-// an extra texture asset.
-// ============================================================================
+// Noise is procedural interleaved gradient noise, not the original's blue-noise texture.
 
 #ifndef GZ_SSR_INCLUDED
 #define GZ_SSR_INCLUDED
+
+// Shared stereo screen-space macros (GZ_DECLARE_SS/GZ_SAMPLE_SS) and the
+// _CameraDepthTexture declaration live here so SSR and soft depth fade agree.
+#include "GzDepth.cginc"
 
 // Only compiled when GzTier.cginc enables SSR (Tier 0 + per-material USE_SSR +
 // environment reflections on).
 #ifdef GZ_USE_SSR
 
-// Stereo-correct screen-space texture sampling (mirrors Mochie's
-// MOCHIE_*_SCREENSPACE macros so single-pass-instanced VR samples the right eye).
-#if defined(UNITY_STEREO_INSTANCING_ENABLED) || defined(UNITY_STEREO_MULTIVIEW_ENABLED)
-    #define GZ_DECLARE_SS(tex)      Texture2DArray tex; SamplerState sampler##tex
-    #define GZ_SAMPLE_SS(tex, uv)   tex.SampleLevel(sampler##tex, float3(uv, (float)unity_StereoEyeIndex), 0)
-#else
-    #define GZ_DECLARE_SS(tex)      Texture2D tex; SamplerState sampler##tex
-    #define GZ_SAMPLE_SS(tex, uv)   tex.SampleLevel(sampler##tex, uv, 0)
-#endif
-
 GZ_DECLARE_SS(_GzGrab);               // GrabPass capture of the opaque scene
-GZ_DECLARE_SS(_CameraDepthTexture);   // scene depth (requires a depth texture)
 float4 _GzGrab_TexelSize;
-
-// VRChat mirror detection (Mochie / Common/Utilities.cginc). SSR is skipped in
-// mirrors because the grab/depth there don't correspond to this view.
-bool GzIsInMirror()
-{
-    return unity_CameraProjection[2][0] != 0.0 || unity_CameraProjection[2][1] != 0.0;
-}
-
-// Interleaved gradient noise (Jimenez) — procedural replacement for Mochie's
-// blue-noise texture sample. Input is the pixel coordinate (SV_POSITION.xy).
-float GzSSRNoise(float2 pixel)
-{
-    return frac(52.9829189 * frac(dot(pixel, float2(0.06711056, 0.00583715))));
-}
 
 // Box blur of the grab capture for rougher reflections (Mochie GetBlurredGrabPass).
 float3 GzBlurredGrab(float2 texelSize, float2 uvs, float dim)

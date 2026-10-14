@@ -12,8 +12,7 @@
 #define GZ_SHADOW_CASTER_PASS_INCLUDED
 
 #pragma target 3.0
-#pragma vertex vert
-#pragma fragment frag
+// NOTE: #pragma vertex/fragment live in the .shader pass shells (SPS patcher).
 #pragma multi_compile_shadowcaster
 #pragma multi_compile_instancing
 
@@ -21,11 +20,19 @@
 #pragma shader_feature_local USE_BASE_COLOR_TEXTURE
 #pragma shader_feature_local USE_TEXTURE_ARRAYS
 #pragma shader_feature_local _ARRAYINDEXSOURCE_VERTEX _ARRAYINDEXSOURCE_MATERIALINSTANCE
+#pragma shader_feature_local USE_OBJECT_TOGGLES
 #pragma shader_feature_local USE_AUX_DATA
 #pragma shader_feature_local _FACECULLSOURCE_HARDWARE _FACECULLSOURCE_TEXTURE
 
+#pragma shader_feature_local USE_DITHERED_SHADOWS
+
+#if defined(USE_DITHERED_SHADOWS) && (defined(_RENDERMODE_TRANSPARENT) || defined(_RENDERMODE_PREMULTIPLIEDALPHA))
+    #define GZ_DITHERED_SHADOWS
+#endif
+
 #include "UnityCG.cginc"
 #include "../GzProperties.cginc"
+#include "../GzObjectToggles.cginc"
 
 // Custom input (appdata_base has no UV3) so cutout can read the per-vertex slice.
 struct GzShadowInput
@@ -33,8 +40,8 @@ struct GzShadowInput
     float4 vertex   : POSITION;
     float3 normal   : NORMAL;
     float2 texcoord : TEXCOORD0;
-    #ifdef USE_TEXTURE_ARRAYS
-        float2 texArraySlice : TEXCOORD3; // .x = per-vertex array slice index
+    #if defined(USE_TEXTURE_ARRAYS) || defined(USE_OBJECT_TOGGLES)
+        float2 texArraySlice : TEXCOORD3; // .x = per-vertex array slice index, .y = governing toggle bitmask
     #endif
     UNITY_VERTEX_INPUT_INSTANCE_ID
 };
@@ -55,6 +62,10 @@ v2f vert(GzShadowInput v)
     UNITY_SETUP_INSTANCE_ID(v);
     UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
     TRANSFER_SHADOW_CASTER_NORMALOFFSET(o)
+    #ifdef USE_OBJECT_TOGGLES
+        // o.pos exists in both V2F_SHADOW_CASTER layouts, so collapsing it is enough
+        GzApplyObjectToggle(o.pos, v.texArraySlice.y);
+    #endif
     o.uv = v.texcoord * GZ_TEX_ST(_BaseColorTexture).xy + GZ_TEX_ST(_BaseColorTexture).zw;
     #ifdef USE_TEXTURE_ARRAYS
         o.arraySlice = GZ_RESOLVE_SLICE(v);
@@ -62,10 +73,10 @@ v2f vert(GzShadowInput v)
     return o;
 }
 
-float4 frag(v2f i, fixed facing : VFACE) : SV_Target
+float4 frag(v2f i, bool facing : SV_IsFrontFace) : SV_Target
 {
-    // Per-vertex/instance array slice (used by cutout and texture face culling).
-    #if defined(_RENDERMODE_CUTOUT) || defined(_FACECULLSOURCE_TEXTURE)
+    // Per-vertex/instance array slice (used by cutout, dithered shadows and texture face culling).
+    #if defined(_RENDERMODE_CUTOUT) || defined(GZ_DITHERED_SHADOWS) || defined(_FACECULLSOURCE_TEXTURE)
         #ifdef USE_TEXTURE_ARRAYS
             float shadowSlice = i.arraySlice;
         #else
@@ -73,21 +84,28 @@ float4 frag(v2f i, fixed facing : VFACE) : SV_Target
         #endif
     #endif
 
-    #ifdef _RENDERMODE_CUTOUT
+    #if defined(_RENDERMODE_CUTOUT) || defined(GZ_DITHERED_SHADOWS)
         #ifdef USE_BASE_COLOR_TEXTURE
             half alpha = GZ_SAMPLE_TEX(_BaseColorTexture, i.uv, shadowSlice).a * _Color.a;
         #else
             half alpha = _Color.a;
         #endif
+    #endif
+
+    #ifdef _RENDERMODE_CUTOUT
         clip(alpha - _AlphaCutoff);
     #endif
 
-    // Texture-driven face culling in the shadow pass (matches the forward passes)
-    // so cast shadows respect per-variant culling, independent of the Aux Data
-    // feature. Cull mode is per-variant, so sampling at the base UV is fine.
+    #ifdef GZ_DITHERED_SHADOWS
+        const half bayer[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+        float2 cell = fmod(floor(i.pos.xy), 4.0);
+        clip(alpha - (bayer[(int)(cell.y * 4.0 + cell.x)] + 0.5) / 16.0);
+    #endif
+
+    // Base UV is fine for face culling here because cull mode is constant per variant.
     #if defined(_FACECULLSOURCE_TEXTURE)
         half auxCull = round(GZ_SAMPLE_TEX(_AuxDataTexture, i.uv, shadowSlice).b * 2.0);
-        if (auxCull > 0.5 && ((auxCull >= 1.5) == (facing >= 0))) discard;
+        if (auxCull > 0.5 && ((auxCull >= 1.5) == facing)) discard;
     #endif
 
     SHADOW_CASTER_FRAGMENT(i)

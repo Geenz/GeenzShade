@@ -16,10 +16,6 @@
 // Forward declarations
 half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingContext ctx);
 
-// ============================================
-// Base Material Layer Calculations
-// ============================================
-
 // Calculate diffuse component (Lambertian)
 half3 GzCalculateDiffuse(GzMaterialData matData, GzLightingContext ctx)
 {
@@ -73,19 +69,7 @@ half3 GzCalculateBaseBRDF(GzMaterialData matData, GzLightingContext ctx, half3 F
     return diffuse + specular;
 }
 
-// ============================================
-// Sheen Layer Calculations (functions moved to GzSheen.cginc)
-// ============================================
-// Note: Sheen is now properly applied by scaling base color before diffuse calculation,
-// not by scaling the final BRDF. See GzEvaluateLayerStack for the correct implementation.
-
-// ============================================
-// Clearcoat Layer Calculations
-// ============================================
-
-// Calculate clearcoat BRDF with proper clearcoat normal
-// Per glTF spec: clearcoat_brdf = D(α) * G(α) / (4 * abs(VdotNc) * abs(LdotNc))
-// Note: NoL is NOT included in the BRDF, it's applied during layering
+// Clearcoat BRDF excludes NoL, which is applied during layering.
 half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
 {
 #ifdef GZ_USE_CLEARCOAT
@@ -100,7 +84,7 @@ half3 GzCalculateClearcoat(GzMaterialData matData, GzLightingContext ctx)
         half3 F = GzFresnelSchlick(clearcoatF0, clearcoatF90, ctx.ccVoH, matData.clearcoatRoughness);
         
         // Clamp clearcoat roughness and square it for alpha
-        // Per spec: α = clearcoatRoughness^2
+        // Per spec: alpha = clearcoatRoughness^2
         half roughness = max(matData.clearcoatRoughness, 0.01);
         
         // GGX Distribution with clearcoat normal
@@ -137,10 +121,6 @@ half3 GzAttenuateEmissionByClearcoat(half3 emission, GzMaterialData matData, hal
     return emission;
 }
 
-// ============================================
-// Diffuse Transmission Calculations (KHR_materials_diffuse_transmission)
-// ============================================
-
 // Calculate diffuse BSDF with transmission
 // Following Khronos reference implementation - returns diffuse without NoL
 half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingContext ctx)
@@ -161,10 +141,6 @@ half3 GzCalculateDiffuseWithTransmission(GzMaterialData matData, GzLightingConte
     
     return f_diffuse;
 }
-
-// ============================================
-// Complete Layer Stack Evaluation
-// ============================================
 
 // Evaluate all layers in correct order for direct lighting
 half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
@@ -232,10 +208,6 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
         // Per spec: clearcoat_fresnel = 0.04 + (1 - 0.04) * (1 - abs(VdotNc))^5
         half clearcoatFresnel = 0.04 + (1.0 - 0.04) * GzPow5(1.0 - ctx.ccNoV);
         
-        // Apply clearcoat layering per glTF spec:
-        // coated_material = mix(material, clearcoat_brdf, clearcoat * clearcoat_fresnel)
-        // Since baseBRDF already has NoL applied and clearcoatBRDF needs ccNoL:
-        // baseBRDF = baseBRDF * (1 - clearcoat * fresnel) + clearcoatBRDF * ccNoL * clearcoat * fresnel
         half clearcoatWeight = matData.clearcoatFactor * clearcoatFresnel;
         
         // Attenuate base material and add clearcoat contribution
@@ -246,10 +218,6 @@ half3 GzEvaluateLayerStack(GzMaterialData matData, GzLightingContext ctx)
     return baseBRDF;
 }
 
-// ============================================
-// Indirect/Environment Layer Calculations
-// ============================================
-
 // Calculate base indirect response
 half3 GzCalculateBaseIndirect(GzMaterialData matData, GzLightingContext ctx, 
                               half3 indirectDiffuse, half3 indirectSpecular)
@@ -258,7 +226,7 @@ half3 GzCalculateBaseIndirect(GzMaterialData matData, GzLightingContext ctx,
     half3 F0 = matData.f0;
     half3 F90 = matData.f90;
     
-    // Environment Fresnel using roughness-dependent Fresnel (Fdez-Agüera)
+    // Environment Fresnel using roughness-dependent Fresnel
     half3 F = GzFresnelSchlick(F0, F90, ctx.NoV, matData.roughness);
     
     // Energy conservation
@@ -281,14 +249,6 @@ half3 GzCalculateSheenIndirect(GzMaterialData matData, GzLightingContext ctx, ha
 #ifdef GZ_USE_SHEEN
     if (GzMax3(matData.sheenColor) > 0)
     {
-        // For sheen IBL, we need to approximate the Charlie BRDF response
-        // Without a Charlie-filtered environment map, we blend between diffuse and specular
-        // based on sheen roughness
-        
-        // Calculate sheen BRDF response for environment lighting
-        // Charlie distribution has a different energy profile than GGX
-        // It's broader and more diffuse-like, especially at high roughness
-        
         // Use sheen roughness to interpolate between specular and diffuse environment
         // This approximates the Charlie-filtered environment response
         half sheenMix = matData.sheenRoughness;
@@ -342,7 +302,7 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
     if (matData.clearcoatFactor > 0)
     {
         half ccNoV = saturate(dot(matData.clearcoatNormal, ctx.viewDir));
-        // Simple Schlick for layering weight — matches direct path and spec
+        // Simple Schlick for layering weight - matches direct path and spec
         half clearcoatFresnel = 0.04 + (1.0 - 0.04) * GzPow5(1.0 - ccNoV);
         half clearcoatWeight = matData.clearcoatFactor * clearcoatFresnel;
 
@@ -367,13 +327,6 @@ half3 GzEvaluateLayerStackIndirect(GzMaterialData matData, GzLightingContext ctx
     return GzEvaluateLayerStackIndirect(matData, ctx, indirectDiffuse, indirectSpecular, half3(0,0,0));
 }
 
-// ============================================
-// VRC Light Volumes — Per-Channel Evaluation
-// ============================================
-
-// Evaluate VRC Light Volumes with per-channel directional lighting
-// Each color channel gets its own L1-derived light direction, preserving
-// directional color variation through the full BRDF layer stack
 #ifdef USE_VRC_LIGHT_VOLUMES
 half3 GzEvaluateLightVolumes(float3 worldPos, half3 normal, half3 viewDir, GzMaterialData matData)
 {

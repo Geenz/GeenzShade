@@ -25,10 +25,6 @@
     #include "Packages/red.sim.lightvolumes/Shaders/LightVolumes.cginc"
 #endif
 
-// ============================================
-// Lightmap Data Structure
-// ============================================
-
 // Extract dominant light direction and color from DLM for full shading
 struct GzLightmapData
 {
@@ -40,10 +36,6 @@ struct GzLightmapData
 
 // Forward declaration
 GzLightmapData GzSampleLightmapComplete(float2 lightmapUV);
-
-// ============================================
-// Light Context Creation
-// ============================================
 
 // Create lighting context for main light in ForwardBase (directional light)
 GzLightingContext GzCreateDirectionalLightContext(GzVertexOutput i, half3 normal)
@@ -157,10 +149,6 @@ GzLightingContext GzCreateAdditiveLightContext(GzVertexOutputAdd i, half3 normal
     return ctx;
 }
 
-// ============================================
-// Vertex Light Gathering (ForwardBase only)
-// ============================================
-
 // Get vertex light contribution
 half3 GzGetVertexLights(GzVertexOutput i, half3 albedo, half metallic)
 {
@@ -172,10 +160,6 @@ half3 GzGetVertexLights(GzVertexOutput i, half3 albedo, half metallic)
         return half3(0, 0, 0);
     #endif
 }
-
-// ============================================
-// Environment Luminance Calculation
-// ============================================
 
 // Calculate average environment luminance from blended reflection probes
 half GzGetAverageEnvironmentLuminance()
@@ -204,10 +188,6 @@ half GzGetAverageEnvironmentLuminance()
 
     return dot(avgColor, half3(0.299, 0.587, 0.114));
 }
-
-// ============================================
-// Lightmap Sampling
-// ============================================
 
 // Sample static lightmap and extract lighting data (following Unity's approach)
 GzLightmapData GzSampleLightmapComplete(float2 lightmapUV)
@@ -264,10 +244,6 @@ half3 GzSampleDynamicLightmap(float2 dynamicLightmapUV, half3 worldNormal)
         return half3(0, 0, 0);
     #endif
 }
-
-// ============================================
-// Ambient/Indirect Light Gathering
-// ============================================
 
 // Get ambient light from SH
 half3 GzGetAmbientSH(half3 normal)
@@ -351,9 +327,6 @@ half3 GzParallaxCorrectReflection(half3 reflectionDir, float3 worldPos)
     #endif
 }
 
-// Get indirect specular with environment-aware fallback
-// Uses per-pixel blended probe luminance for fallback decisions so transitions
-// between probes and fallback are smooth (matches GzSampleEnvironment approach)
 half3 GzGetIndirectSpecular(half3 reflectionDir, half roughness, float3 worldPos, half occlusion)
 {
     #ifdef USE_ENVIRONMENT_REFLECTION
@@ -384,7 +357,7 @@ half3 GzGetIndirectSpecular(half3 reflectionDir, half roughness, float3 worldPos
         half probeLuminance = dot(envSample, half3(0.299, 0.587, 0.114));
         if (probeLuminance < _ReflectionProbeThreshold)
         {
-            // Fallback cubemap is a distant environment — use raw reflection direction
+            // Fallback cubemap is a distant environment - use raw reflection direction
             // (no box projection; that's only for local probes)
             half mipLevel = roughness * _FallbackMaxMipLevel;
             half3 fallbackSpecular = texCUBElod(_FallbackCubemap, half4(reflectionDir, mipLevel)).rgb * _FallbackIntensity;
@@ -413,10 +386,6 @@ half GzComputeSpecularOcclusion(half NoV, half ao, half roughness)
     
     return saturate(pow(NoV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao) * horizonFade;
 }
-
-// ============================================
-// Complete Light Gathering
-// ============================================
 
 // Structure to hold all gathered indirect lighting
 struct GzIndirectLight
@@ -491,9 +460,6 @@ GzIndirectLight GzGatherIndirectLight(float3 worldPos, half3 normal, half3 viewD
     half specOcc = GzComputeSpecularOcclusion(NoV, occlusion, roughness);
     indirect.specular *= specOcc;
     
-    // Optionally blend indirect specular toward lightmap color on lightmapped surfaces
-    // _LightmapReflectionBlend = 0 (default) preserves full reflections (spec-correct)
-    // _LightmapReflectionBlend = 1 fully tints reflections by baked color (artistic)
     #ifdef LIGHTMAP_ON
         indirect.specular *= lerp(half3(1,1,1), bakedColor, _LightmapReflectionBlend);
     #endif

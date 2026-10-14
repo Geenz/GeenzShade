@@ -9,6 +9,7 @@ using UnityEngine;
 using UnityEditor;
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 namespace GeenzShade
 {
@@ -24,11 +25,22 @@ namespace GeenzShade
         private static bool environmentFoldout = false;
         private static bool specularFoldout = false;
         private static bool ssrFoldout = false;
+        private static bool softDepthFoldout = false;
+        private static bool ssShadowFoldout = false;
         private static bool qualityTierFoldout = false;
-        
+        private static bool complexityFoldout = false;
+        private static int mapConverterIndex = 0;
+        private static Material mapConverterMaterial = null;
+        private static string mapConverterPreviousShader = null;
+
         // Light Volumes detection
         private static bool? lightVolumesInstalled = null;
         private const string LIGHT_VOLUMES_PATH = "Packages/red.sim.lightvolumes/Shaders/LightVolumes.cginc";
+        private static bool emissionWaveFoldout = false;
+        private static bool? audioLinkInstalled = null;
+        private const string AUDIOLINK_PATH = "Packages/com.llealloo.audiolink/Runtime/Shaders/AudioLink.cginc";
+        private static bool? ltcgiInstalled = null;
+        private const string LTCGI_PATH = "Packages/at.pimaker.ltcgi/Shaders/LTCGI.cginc";
 
         public enum RenderMode
         {
@@ -57,6 +69,10 @@ namespace GeenzShade
             
             EditorGUILayout.Space();
             
+            DrawComplexitySummary(materialEditor, material);
+
+            EditorGUILayout.Space();
+
             DrawAdvancedRenderMode(materialEditor, properties, material);
             
             EditorGUILayout.Space();
@@ -69,11 +85,96 @@ namespace GeenzShade
             }
         }
 
+        private void DrawComplexitySummary(MaterialEditor materialEditor, Material material) {
+            List<GzComplexityEstimate.Row> rows = GzComplexityEstimate.GetRows(material, materialEditor);
+            int rowIndex = 0;
+
+            EditorGUILayout.LabelField("Complexity", EditorStyles.boldLabel);
+
+            while (rowIndex < rows.Count) {
+                int subshaderIndex = rows[rowIndex].SubshaderIndex;
+                string tierLabel = rows[rowIndex].TierLabel;
+                bool measuring = false;
+                int vertexAlu = -1;
+                int fragmentAlu = -1;
+                int samplers = -1;
+                int questUnits = -1;
+                bool questFailed = false;
+
+                while (rowIndex < rows.Count && rows[rowIndex].SubshaderIndex == subshaderIndex) {
+                    GzComplexityEstimate.Row row = rows[rowIndex];
+                    rowIndex++;
+
+                    if (!row.Measured) {
+                        measuring = true;
+                    }
+
+                    if (row.PcFailure == null) {
+                        if (row.PassName == "ForwardBase") {
+                            vertexAlu = Math.Max(vertexAlu, row.VertexAlu);
+                            fragmentAlu = Math.Max(fragmentAlu, row.FragmentAlu);
+                        }
+
+                        samplers = Math.Max(samplers, row.FragmentSamplers);
+                    }
+
+                    questUnits = Math.Max(questUnits, row.QuestTextureUnits);
+
+                    if (row.QuestFailure != null) {
+                        questFailed = true;
+                    }
+                }
+
+                string tierText = tierLabel + ": measuring...";
+                if (!measuring) {
+                    string questText = "Quest compile error";
+                    if (!questFailed) {
+                        questText = "Quest ALU ~PS " + GzComplexityEstimate.FormatCount(fragmentAlu)
+                            + ", " + GzComplexityEstimate.FormatLimit(questUnits) + " texture units";
+                    }
+
+                    tierText = tierLabel + ": PC ALU VS " + GzComplexityEstimate.FormatCount(vertexAlu) + " / PS " + GzComplexityEstimate.FormatCount(fragmentAlu)
+                        + ", " + GzComplexityEstimate.FormatLimit(samplers) + " samplers"
+                        + " | " + questText;
+                }
+
+                EditorGUILayout.LabelField(tierText, EditorStyles.wordWrappedLabel);
+            }
+
+            foreach (string issue in GzComplexityEstimate.DescribeIssues(rows, material)) {
+                EditorGUILayout.HelpBox(issue, MessageType.Warning);
+            }
+
+            complexityFoldout = EditorGUILayout.Foldout(complexityFoldout, "Complexity Breakdown", true);
+
+            if (complexityFoldout) {
+                EditorGUI.indentLevel++;
+
+                foreach (GzComplexityEstimate.Row row in rows) {
+                    EditorGUILayout.LabelField(GzComplexityEstimate.DescribeRow(row), EditorStyles.wordWrappedLabel);
+                }
+
+                EditorGUI.indentLevel--;
+            }
+        }
+
         public override void AssignNewShaderToMaterial(Material material, Shader oldShader, Shader newShader)
         {
             base.AssignNewShaderToMaterial(material, oldShader, newShader);
+
+            if (oldShader != null) {
+                material.SetOverrideTag("GzPreviousShader", oldShader.name);
+                material.SetOverrideTag(GzSourceMaterial.SourceColorTag, "");
+                material.SetOverrideTag(GzSourceMaterial.SourceMetallicTag, "");
+                IMapConverter converter = GzMapConversion.Find(oldShader.name);
+
+                if (converter != null) {
+                    ApplyMapConversion(material, converter);
+                }
+            }
+
             var properties = MaterialEditor.GetMaterialProperties(new Material[] { material });
-            
+
             // Auto-configure light volumes based on availability
             var useVRCLightVolumesProp = FindProperty("_UseVRCLightVolumes", properties);
             if (useVRCLightVolumesProp != null)
@@ -83,6 +184,27 @@ namespace GeenzShade
             }
             
             UpdateMaterialKeywords(material, properties);
+        }
+
+        private void ApplyMapConversion(Material material, IMapConverter converter) {
+            GzMapConversionResult result;
+            string outputFolder = GzMapConversion.OutputFolder(material);
+
+            using (GzSourceMaterial source = new GzSourceMaterial(material)) {
+                result = converter.Convert(source, material, outputFolder);
+            }
+
+            if (result.HasRenderMode) {
+                SetupRenderMode(material, result.RenderMode);
+            }
+
+            if (result.Skipped.Count > 0) {
+                Debug.LogWarning("[GzPBR] " + material.name + ": not converted (no GzPBR slot): " + string.Join(", ", result.Skipped));
+            }
+
+            foreach (string warning in result.Warnings) {
+                Debug.LogWarning("[GzPBR] " + material.name + ": " + warning);
+            }
         }
 
         public override void ValidateMaterial(Material material)
@@ -149,9 +271,7 @@ namespace GeenzShade
                     int newCullSrc = EditorGUILayout.Popup(cullSrc, new[] { "Hardware", "Texture" });
                     if (newCullSrc != cullSrc)
                     {
-                        // Preserve the cull intent across the switch: _Cull is the render
-                        // state (forced Off in Texture mode for double-sided); _FaceCullBake
-                        // carries the intent the baker reads.
+                        // _Cull is forced Off in Texture mode, so _FaceCullBake carries the cull intent.
                         if (newCullSrc == 1)
                         {
                             if (cullBakeProp != null && cullProp != null) cullBakeProp.floatValue = cullProp.floatValue;
@@ -196,7 +316,7 @@ namespace GeenzShade
                         EditorGUILayout.EndHorizontal();
                     }
                     EditorGUILayout.HelpBox(
-                        "Culling is per-variant from the aux texture's B channel (0=Off, 0.5=Back, 1=Front), read directly — the " +
+                        "Culling is per-variant from the aux texture's B channel (0=Off, 0.5=Back, 1=Front), read directly - the " +
                         "full Auxiliary Data feature need not be on. Assign an aux texture with cull packed in B (use the Aux Data " +
                         "Baker, or enable Auxiliary Data Texture to set one). The material renders double-sided; cast shadows " +
                         "respect this; lightmap (Meta) baking still renders double-sided. Per-pixel discard disables early-Z, " +
@@ -252,7 +372,53 @@ namespace GeenzShade
                     }
                 }
                 EditorGUILayout.Space(5);
-                
+
+                var useDitheredShadowsProp = FindProperty("_UseDitheredShadows", properties);
+
+                if (useDitheredShadowsProp != null) {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Dithered Shadows", "Transparent and Premultiplied modes cast shadows dithered by opacity."),
+                        GUILayout.Width(EditorGUIUtility.labelWidth));
+                    bool useDitheredShadows = useDitheredShadowsProp.floatValue > 0;
+                    bool newUseDitheredShadows = EditorGUILayout.Toggle(useDitheredShadows);
+
+                    if (newUseDitheredShadows != useDitheredShadows) {
+                        float ditheredShadowsValue = 0f;
+                        if (newUseDitheredShadows) {
+                            ditheredShadowsValue = 1f;
+                        }
+
+                        useDitheredShadowsProp.floatValue = ditheredShadowsValue;
+                    }
+
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                var useSharedSamplerProp = FindProperty("_UseSharedSampler", properties);
+
+                if (useSharedSamplerProp != null) {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(
+                        new GUIContent("Shared Texture Sampler", "Material textures use the first enabled texture's wrap and filter settings (Base Color, then ORM, then Normal). Frees samplers on PC."),
+                        GUILayout.Width(EditorGUIUtility.labelWidth));
+                    bool useSharedSampler = useSharedSamplerProp.floatValue > 0;
+                    bool newUseSharedSampler = EditorGUILayout.Toggle(useSharedSampler);
+
+                    if (newUseSharedSampler != useSharedSampler) {
+                        float sharedSamplerValue = 0f;
+                        if (newUseSharedSampler) {
+                            sharedSamplerValue = 1f;
+                        }
+
+                        useSharedSamplerProp.floatValue = sharedSamplerValue;
+                    }
+
+                    EditorGUILayout.EndHorizontal();
+                }
+
+                EditorGUILayout.Space(5);
+
                 var srcBlendProp = FindProperty("_SrcBlend", properties);
                 if (srcBlendProp != null)
                 {
@@ -313,12 +479,53 @@ namespace GeenzShade
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.Space(5);
+                materialEditor.EnableInstancingField();
+                materialEditor.DoubleSidedGIField();
+                materialEditor.LightmapEmissionFlagsProperty(0, true, true);
+
+                EditorGUILayout.Space(5);
                 DrawTextureArrays(materialEditor, properties, material);
 
                 EditorGUILayout.Space(5);
                 DrawAuxData(materialEditor, properties, material);
 
+                EditorGUILayout.Space(5);
+                DrawMapConversion(material);
+
                 EditorGUI.indentLevel--;
+            }
+        }
+
+        private void DrawMapConversion(Material material) {
+            string previousShader = material.GetTag("GzPreviousShader", false);
+
+            if (mapConverterMaterial != material || mapConverterPreviousShader != previousShader) {
+                mapConverterMaterial = material;
+                mapConverterPreviousShader = previousShader;
+                mapConverterIndex = 0;
+
+                for (int index = 0; index < GzMapConversion.Converters.Count; index++) {
+                    if (GzMapConversion.Converters[index].Handles(previousShader)) {
+                        mapConverterIndex = index;
+                    }
+                }
+            }
+
+            string[] converterNames = new string[GzMapConversion.Converters.Count];
+
+            for (int index = 0; index < converterNames.Length; index++) {
+                converterNames[index] = GzMapConversion.Converters[index].DisplayName;
+            }
+
+            mapConverterIndex = EditorGUILayout.Popup(
+                new GUIContent("Convert Maps From", "Source shader whose maps are repacked into GzPBR slots. Source maps are never modified; new maps are written to Assets/GeenzShade/Converted."),
+                mapConverterIndex, converterNames);
+
+            if (GUILayout.Button("Convert Maps")) {
+                Undo.RecordObject(material, "Convert Maps");
+                ApplyMapConversion(material, GzMapConversion.Converters[mapConverterIndex]);
+                ValidateMaterial(material);
+                GUIUtility.ExitGUI();
             }
         }
 
@@ -353,6 +560,11 @@ namespace GeenzShade
 
             // Screen-Space Reflections (Ultra/LOD0 only)
             DrawSSRProperties(materialEditor, properties, material);
+            DrawSoftDepthProperties(materialEditor, properties, material);
+            DrawScreenSpaceShadowProperties(materialEditor, properties, material);
+
+            // Emission wave (AudioLink)
+            DrawEmissionWaveProperties(materialEditor, properties, material);
 
             // Quality Tier (shader LOD)
             DrawQualityTier(materialEditor, properties, material);
@@ -803,7 +1015,386 @@ namespace GeenzShade
             }
             return lightVolumesInstalled.Value;
         }
-        
+
+        private bool CheckAudioLinkInstalled()
+        {
+            if (audioLinkInstalled == null)
+            {
+                audioLinkInstalled = File.Exists(Path.Combine(Application.dataPath.Replace("/Assets", ""), AUDIOLINK_PATH));
+            }
+            return audioLinkInstalled.Value;
+        }
+
+        private bool CheckLTCGIInstalled() {
+            if (ltcgiInstalled == null) {
+                ltcgiInstalled = File.Exists(Path.Combine(Application.dataPath.Replace("/Assets", ""), LTCGI_PATH));
+            }
+
+            return ltcgiInstalled.Value;
+        }
+
+        /// <summary>Forces the mode Off without AudioLink, whose #include cannot resolve.</summary>
+        private void DrawEmissionWaveProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            var modeProp = FindProperty("_EmissionWave", properties);
+            if (modeProp == null) return;
+
+            emissionWaveFoldout = EditorGUILayout.Foldout(emissionWaveFoldout, "Emission Wave (AudioLink)", true);
+            if (!emissionWaveFoldout) return;
+
+            EditorGUI.indentLevel++;
+
+            if (!CheckAudioLinkInstalled())
+            {
+                EditorGUILayout.HelpBox(
+                    "AudioLink is not installed in this project, so the emission wave cannot compile.",
+                    MessageType.Info);
+                if (modeProp.floatValue > 0.5f) modeProp.floatValue = 0f;
+                // The float alone is not enough: an imported material keeps its Pulse/Ripple keyword.
+                material.DisableKeyword("_EMISSIONWAVE_PULSE");
+                material.DisableKeyword("_EMISSIONWAVE_RIPPLE");
+                material.EnableKeyword("_EMISSIONWAVE_OFF");
+                EditorGUI.indentLevel--;
+                return;
+            }
+
+            int mode = Mathf.RoundToInt(modeProp.floatValue);
+            int newMode = EditorGUILayout.Popup("Wave Mode", mode, new[] { "Off", "Pulse", "Ripple" });
+            if (newMode != mode)
+            {
+                modeProp.floatValue = newMode;
+                material.DisableKeyword("_EMISSIONWAVE_OFF");
+                material.DisableKeyword("_EMISSIONWAVE_PULSE");
+                material.DisableKeyword("_EMISSIONWAVE_RIPPLE");
+                material.EnableKeyword(
+                    newMode == 1 ? "_EMISSIONWAVE_PULSE" :
+                    newMode == 2 ? "_EMISSIONWAVE_RIPPLE" : "_EMISSIONWAVE_OFF");
+            }
+
+            if (newMode == 0)
+            {
+                EditorGUI.indentLevel--;
+                return;
+            }
+
+            EditorGUI.indentLevel++;
+
+            // The shader always reads the field from _EmissiveTexture's alpha. This slot is
+            // just the pack source; it is never sampled, so it costs no sampler register.
+            var sdfTexProp = FindProperty("_EmissionWaveSdfTex", properties);
+            var emissiveTexProp = FindProperty("_EmissiveTexture", properties);
+            if (sdfTexProp != null)
+                materialEditor.TexturePropertySingleLine(new GUIContent("Wave SDF"), sdfTexProp);
+
+            using (new EditorGUI.DisabledScope(
+                sdfTexProp == null || sdfTexProp.textureValue == null ||
+                emissiveTexProp == null || emissiveTexProp.textureValue == null))
+            {
+                if (GUILayout.Button("Pack SDF Into Emissive Alpha"))
+                {
+                    var packed = PackSdfIntoEmissiveAlpha(
+                        emissiveTexProp.textureValue as Texture2D,
+                        sdfTexProp.textureValue as Texture2D);
+                    if (packed != null) emissiveTexProp.textureValue = packed;
+                }
+            }
+
+            if (GzSdfBridge.Available)
+            {
+                using (new EditorGUI.DisabledScope(
+                    emissiveTexProp == null || emissiveTexProp.textureValue == null ||
+                    materialEditor.targets.Length > 1))
+                {
+                    if (GUILayout.Button(new GUIContent("Generate SDF From Emissive (GeenzTools)",
+                            "Generates the field from the emissive map's luminance, stitches UV " +
+                            "seams using the mesh this material renders on, packs it into the " +
+                            "emissive alpha, and assigns the result.")))
+                    {
+                        var generated = GzSdfBridge.GenerateAndPack(
+                            emissiveTexProp.textureValue as Texture2D, material);
+                        if (generated != null) emissiveTexProp.textureValue = generated;
+                    }
+                }
+            }
+
+            DrawBandRow(properties, materialEditor, "_EmissionWaveBass", "_EmissionWaveBassColor", "Bass");
+            DrawBandRow(properties, materialEditor, "_EmissionWaveLowMid", "_EmissionWaveLowMidColor", "Low Mid");
+            DrawBandRow(properties, materialEditor, "_EmissionWaveHighMid", "_EmissionWaveHighMidColor", "High Mid");
+            DrawBandRow(properties, materialEditor, "_EmissionWaveTreble", "_EmissionWaveTrebleColor", "Treble");
+
+            DrawFloat(properties, "_EmissionWaveGain", "Audio Gain");
+            DrawFloat(properties, "_EmissionWaveGate", "Silence Gate");
+
+            var axisProp = FindProperty("_EmissionWaveAxis", properties);
+            if (axisProp != null)
+                axisProp.vectorValue = EditorGUILayout.Vector4Field("Travel Axis (XYZ dir, W origin)", axisProp.vectorValue);
+
+            DrawFloat(properties, "_EmissionWaveTravel", "Travel Amount");
+            DrawFloat(properties, "_EmissionWaveSoftness", "Softness");
+            DrawFloat(properties, "_EmissionWaveEdgeSoftness", "Screen AA (px)");
+            DrawFloat(properties, "_EmissionWaveEdgeFade", "Field Edge Fade");
+            DrawFloat(properties, "_EmissionWaveGlow", "Crest Glow");
+            DrawSlider(properties, "_EmissionWaveFresnel", "View Falloff", 0f, 1f);
+            DrawFloat(properties, "_EmissionWaveFresnelPower", "View Falloff Power");
+            DrawFloat(properties, "_EmissionWaveFresnelMultiplier", "View Falloff Multiplier");
+            DrawFloat(properties, "_EmissionWaveFresnelClampMin", "View Falloff Clamp Min");
+            DrawFloat(properties, "_EmissionWaveFresnelClampMax", "View Falloff Clamp Max");
+
+            if (newMode == 1)
+            {
+                DrawFloat(properties, "_EmissionWaveGrow", "Pulse Grow");
+                DrawFloat(properties, "_EmissionWavePivot", "Pulse Pivot");
+            }
+            else
+            {
+                DrawFloat(properties, "_EmissionWaveFrequency", "Ripple Frequency");
+                DrawFloat(properties, "_EmissionWaveRingWidth", "Ripple Ring Width");
+                DrawFloat(properties, "_EmissionWaveSpeed", "Ripple Speed");
+                DrawFloat(properties, "_EmissionWaveSdfMul", "Ripple SDF Multiplier");
+                DrawFloat(properties, "_EmissionWaveSdfFalloff", "Ripple SDF Falloff");
+                DrawSlider(properties, "_EmissionWaveSmoothing", "Ripple Audio Smoothing", 0f, 15f);
+            }
+
+            EditorGUI.indentLevel -= 2;
+        }
+
+        private void DrawFloat(MaterialProperty[] properties, string name, string label)
+        {
+            var p = FindProperty(name, properties);
+            if (p != null)
+                p.floatValue = EditorGUILayout.FloatField(label, p.floatValue);
+        }
+
+        private void DrawBandRow(MaterialProperty[] properties, MaterialEditor materialEditor,
+            string toggleName, string colorName, string label)
+        {
+            var toggle = FindProperty(toggleName, properties);
+            var color = FindProperty(colorName, properties);
+            EditorGUILayout.BeginHorizontal();
+            if (toggle != null)
+                toggle.floatValue = EditorGUILayout.ToggleLeft(label, toggle.floatValue > 0.5f, GUILayout.Width(90)) ? 1f : 0f;
+            using (new EditorGUI.DisabledScope(toggle != null && toggle.floatValue <= 0.5f))
+            {
+                if (color != null)
+                    color.colorValue = EditorGUILayout.ColorField(color.colorValue);
+            }
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private static Texture2D PackSdfIntoEmissiveAlpha(Texture2D emissive, Texture2D sdf)
+        {
+            if (emissive == null || sdf == null) return null;
+
+            var emissivePath = AssetDatabase.GetAssetPath(emissive);
+            if (string.IsNullOrEmpty(emissivePath))
+            {
+                Debug.LogError("[GzPBR] The emissive texture is not a project asset; cannot pack.");
+                return null;
+            }
+
+            int w = emissive.width;
+            int h = emissive.height;
+            var rgb = ReadThrough(emissive, w, h, ShouldRegamma(emissive));
+            // The field is data, never gamma-encoded, so it is read raw.
+            var field = ReadThrough(sdf, w, h, false);
+            if (rgb == null || field == null) return null;
+
+            var packed = new Texture2D(w, h, TextureFormat.RGBA32, false, true);
+            var outPixels = new Color32[w * h];
+            for (int i = 0; i < outPixels.Length; i++)
+            {
+                outPixels[i] = new Color32(
+                    (byte)Mathf.Clamp(Mathf.RoundToInt(rgb[i].r * 255f), 0, 255),
+                    (byte)Mathf.Clamp(Mathf.RoundToInt(rgb[i].g * 255f), 0, 255),
+                    (byte)Mathf.Clamp(Mathf.RoundToInt(rgb[i].b * 255f), 0, 255),
+                    // The SDF generator replicates the field into all four channels, so any
+                    // channel works; alpha matches what a standalone field texture uses.
+                    (byte)Mathf.Clamp(Mathf.RoundToInt(field[i].a * 255f), 0, 255));
+            }
+            packed.SetPixels32(outPixels);
+            packed.Apply(false, false);
+
+            return SaveWithSdfPng(packed, emissivePath, emissive.wrapMode, overwrite: false);
+        }
+
+        /// <summary>Saves the packed texture as _WithSDF.png and destroys it.</summary>
+        private static Texture2D SaveWithSdfPng(Texture2D packed, string emissivePath, TextureWrapMode wrapMode, bool overwrite)
+        {
+            int w = packed.width, h = packed.height;
+            var dir = Path.GetDirectoryName(emissivePath).Replace('\\', '/');
+            var baseName = Path.GetFileNameWithoutExtension(emissivePath);
+            if (baseName.EndsWith("_WithSDF")) baseName = baseName.Substring(0, baseName.Length - "_WithSDF".Length);
+            var outPath = $"{dir}/{baseName}_WithSDF.png";
+            if (!overwrite) outPath = AssetDatabase.GenerateUniqueAssetPath(outPath);
+            File.WriteAllBytes(outPath, packed.EncodeToPNG());
+            UnityEngine.Object.DestroyImmediate(packed);
+            AssetDatabase.ImportAsset(outPath, ImportAssetOptions.ForceUpdate);
+
+            var importer = AssetImporter.GetAtPath(outPath) as TextureImporter;
+            if (importer != null)
+            {
+                var src = AssetImporter.GetAtPath(emissivePath) as TextureImporter;
+                importer.textureType = TextureImporterType.Default;
+                // RGB is emission colour, so sRGB stays ON - the opposite of a standalone
+                // field texture. Alpha is never gamma-encoded either way.
+                importer.sRGBTexture = true;
+                importer.alphaSource = TextureImporterAlphaSource.FromInput;
+                importer.alphaIsTransparency = false;
+                importer.mipmapEnabled = src == null || src.mipmapEnabled;
+                importer.wrapMode = wrapMode;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.maxTextureSize = Mathf.Clamp(Mathf.NextPowerOfTwo(Mathf.Max(w, h)), 32, 8192);
+                // CompressedHQ is BC7, not BC3, whose alpha block error stair-steps the SDF edge.
+                importer.textureCompression = TextureImporterCompression.CompressedHQ;
+                importer.crunchedCompression = false;
+                importer.SaveAndReimport();
+            }
+
+            var result = AssetDatabase.LoadAssetAtPath<Texture2D>(outPath);
+            EditorGUIUtility.PingObject(result);
+            return result;
+        }
+
+        /// <summary>Reflection bridge to GeenzTools' SdfGenerator, an optional dependency.</summary>
+        private static class GzSdfBridge
+        {
+            private static bool searched;
+            private static System.Reflection.MethodInfo generate;
+            private static Type channelType;
+
+            public static bool Available
+            {
+                get
+                {
+                    if (!searched)
+                    {
+                        searched = true;
+                        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                        {
+                            var t = asm.GetType("GeenzTools.Core.SdfGenerator");
+                            if (t == null) continue;
+                            generate = t.GetMethod("Generate");
+                            channelType = asm.GetType("GeenzTools.Core.SdfSourceChannel");
+                            break;
+                        }
+                        if (generate == null || channelType == null || generate.GetParameters().Length < 9)
+                            generate = null;
+                    }
+                    return generate != null;
+                }
+            }
+
+            public static Texture2D GenerateAndPack(Texture2D emissive, Material material)
+            {
+                if (!Available || emissive == null) return null;
+                var emissivePath = AssetDatabase.GetAssetPath(emissive);
+                if (string.IsNullOrEmpty(emissivePath))
+                {
+                    Debug.LogError("[GzPBR] The emissive texture is not a project asset; cannot generate.");
+                    return null;
+                }
+
+                var mesh = FindMeshUsing(material);
+                float spread = Mathf.Max(8f, emissive.width / 64f);
+                Texture2D generated = null;
+                try
+                {
+                    EditorUtility.DisplayProgressBar("GzPBR", "Generating SDF...", 0.5f);
+                    // Luminance, never Auto: an already-packed emissive carries the previous
+                    // field in alpha, and Auto would feed it back into itself.
+                    generated = (Texture2D)generate.Invoke(null, new object[]
+                    {
+                        emissive, Enum.ToObject(channelType, 2), 0.5f, spread,
+                        false, 0, emissive, mesh != null, mesh
+                    });
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                }
+                finally
+                {
+                    EditorUtility.ClearProgressBar();
+                }
+                if (generated == null)
+                {
+                    Debug.LogError("[GzPBR] SDF generation failed; see previous errors.");
+                    return null;
+                }
+
+                var saved = SaveWithSdfPng(generated, emissivePath, emissive.wrapMode, overwrite: true);
+                Debug.Log(mesh != null
+                    ? $"[GzPBR] SDF generated from '{emissive.name}', seams stitched via '{mesh.name}' (spread {spread:0} px)."
+                    : $"[GzPBR] SDF generated from '{emissive.name}'. No renderer in the open scenes uses this material, so no seam stitching.");
+                return saved;
+            }
+
+            private static Mesh FindMeshUsing(Material material)
+            {
+                foreach (var r in UnityEngine.Object.FindObjectsOfType<Renderer>())
+                {
+                    var mats = r.sharedMaterials;
+                    if (mats == null) continue;
+                    bool uses = false;
+                    foreach (var m in mats)
+                        if (m == material) { uses = true; break; }
+                    if (!uses) continue;
+                    if (r is SkinnedMeshRenderer smr && smr.sharedMesh != null) return smr.sharedMesh;
+                    var mf = r.GetComponent<MeshFilter>();
+                    if (mf != null && mf.sharedMesh != null) return mf.sharedMesh;
+                }
+                return null;
+            }
+        }
+
+        /// <summary>Reads through a temporary RT so compressed or unreadable sources work.</summary>
+        internal static Color[] ReadThrough(Texture2D source, int w, int h, bool regamma)
+        {
+            var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
+            var prev = RenderTexture.active;
+            Texture2D readback = null;
+            try
+            {
+                Graphics.Blit(source, rt);
+                RenderTexture.active = rt;
+                readback = new Texture2D(w, h, TextureFormat.RGBA32, false, true);
+                readback.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+                readback.Apply(false, false);
+                var pixels = readback.GetPixels();
+
+                // Sampling sRGB in a Linear project returns decoded values, so re-encode them.
+                if (regamma)
+                {
+                    for (int i = 0; i < pixels.Length; i++)
+                    {
+                        var g = pixels[i].gamma;
+                        pixels[i] = new Color(g.r, g.g, g.b, pixels[i].a);
+                    }
+                }
+                return pixels;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[GzPBR] Could not read '{source.name}': {e.Message}");
+                return null;
+            }
+            finally
+            {
+                RenderTexture.active = prev;
+                RenderTexture.ReleaseTemporary(rt);
+                if (readback != null) UnityEngine.Object.DestroyImmediate(readback);
+            }
+        }
+
+        private static bool ShouldRegamma(Texture2D source)
+        {
+            if (PlayerSettings.colorSpace != ColorSpace.Linear) return false;
+            var path = AssetDatabase.GetAssetPath(source);
+            if (string.IsNullOrEmpty(path)) return false;
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            return importer != null && importer.sRGBTexture;
+        }
+
         private void DrawLightingProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
         {
             lightingFoldout = EditorGUILayout.Foldout(lightingFoldout, "Lighting", true);
@@ -852,6 +1443,43 @@ namespace GeenzShade
                     }
                     EditorGUILayout.EndHorizontal();
                     
+                    EditorGUILayout.Space();
+                }
+
+                var ltcgiProp = FindProperty("_LTCGI", properties);
+
+                if (ltcgiProp != null) {
+                    if (!CheckLTCGIInstalled()) {
+                        EditorGUILayout.HelpBox("LTCGI is not installed in this project, so it stays off.", MessageType.Info);
+
+                        if (ltcgiProp.floatValue > 0.5f) {
+                            ltcgiProp.floatValue = 0f;
+                        }
+
+                        material.DisableKeyword("_LTCGI_WORLD");
+                        material.DisableKeyword("_LTCGI_AVATAR");
+                        material.EnableKeyword("_LTCGI_OFF");
+
+                        if (GUILayout.Button("Open LTCGI Installation Instructions")) {
+                            Application.OpenURL("https://ltcgi.dev/Getting%20Started/Installation");
+                        }
+                    } else {
+                        int ltcgiMode = Mathf.RoundToInt(ltcgiProp.floatValue);
+                        int newLtcgiMode = EditorGUILayout.Popup("LTCGI Mode", ltcgiMode, new[] { "Off", "World", "Avatar" });
+
+                        if (newLtcgiMode != ltcgiMode) {
+                            ltcgiProp.floatValue = newLtcgiMode;
+                        }
+
+                        if (newLtcgiMode != 0) {
+                            EditorGUILayout.HelpBox("LTCGI adds a sampler and several textures. Keep Shared Texture Sampler on for PC Tier 0. Quest may exceed its texture limit.", MessageType.Warning);
+
+                            if (material.enableInstancing) {
+                                EditorGUILayout.HelpBox("LTCGI gives each lit renderer its own property block, so these renderers will not GPU-instance.", MessageType.Warning);
+                            }
+                        }
+                    }
+
                     EditorGUILayout.Space();
                 }
                 
@@ -948,7 +1576,7 @@ namespace GeenzShade
                     }
                 }
                 
-                // Lightmap Reflection Blend — only relevant for static/lightmapped objects
+                // Lightmap Reflection Blend - only relevant for static/lightmapped objects
                 if ((material.globalIlluminationFlags & MaterialGlobalIlluminationFlags.RealtimeEmissive) == 0
                     || material.globalIlluminationFlags == MaterialGlobalIlluminationFlags.BakedEmissive
                     || GameObjectIsStaticOrLightmapped(materialEditor))
@@ -1077,7 +1705,7 @@ namespace GeenzShade
 
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField(
-                new GUIContent("Auxiliary Data Texture", "Packs scalar params not covered by the other textures (R: IOR, G: Iridescence IOR, B: Face Cull, A: Sheen Rim Boost) into one texture, so parameter variants can batch under a single material. Replaces those values while on (sheen factor is omitted — it equals scaling the sheen colour)."),
+                new GUIContent("Auxiliary Data Texture", "Packs scalar params not covered by the other textures (R: IOR, G: Iridescence IOR, B: Face Cull, A: Sheen Rim Boost) into one texture, so parameter variants can batch under a single material. Replaces those values while on (sheen factor is omitted - it equals scaling the sheen colour)."),
                 GUILayout.Width(EditorGUIUtility.labelWidth));
             bool useAux = useAuxProp.floatValue > 0.5f;
             bool newUseAux = EditorGUILayout.Toggle(useAux);
@@ -1102,13 +1730,13 @@ namespace GeenzShade
                     }
                 }
                 EditorGUILayout.HelpBox(
-                    "Channels: R=IOR, G=Iridescence IOR, B=Face Cull (0=off, 0.5=back, 1=front), A=Sheen Rim Boost — decoded " +
+                    "Channels: R=IOR, G=Iridescence IOR, B=Face Cull (0=off, 0.5=back, 1=front), A=Sheen Rim Boost - decoded " +
                     "per-vertex/instance slice when Texture Arrays are on. Iridescence and sheen channels only apply when those " +
                     "features are on; B only acts when Face Cull Source = Texture. Sheen factor is omitted (equals scaling the " +
                     "sheen colour).", MessageType.None);
 
                 EditorGUILayout.LabelField("Decode Ranges (Min, Max)", EditorStyles.miniBoldLabel);
-                EditorGUILayout.HelpBox("Must match the ranges the aux texture was baked with. The Aux Data Baker writes these for you. Keep Iridescence IOR Min ≥ 1 — a decoded value near 0 produces white iridescence artifacts.", MessageType.None);
+                EditorGUILayout.HelpBox("Must match the ranges the aux texture was baked with. The Aux Data Baker writes these for you. Keep Iridescence IOR Min >= 1 - a decoded value near 0 produces white iridescence artifacts.", MessageType.None);
                 DrawRangeProp(properties, "_AuxIORMin", "_AuxIORMax", "IOR");
                 DrawRangeProp(properties, "_AuxIridescenceIORMin", "_AuxIridescenceIORMax", "Iridescence IOR");
                 DrawRangeProp(properties, "_AuxSheenRimMin", "_AuxSheenRimMax", "Sheen Rim");
@@ -1138,7 +1766,7 @@ namespace GeenzShade
                     {
                         materialEditor.TexturePropertySingleLine(
                             new GUIContent("Aux Thickness (R:Min G:Max)",
-                                "R: iridescence thickness min, G: thickness max — normalized into the storage range below (nm)."), tex2);
+                                "R: iridescence thickness min, G: thickness max - normalized into the storage range below (nm)."), tex2);
                         if (tex2.textureValue != null)
                         {
                             EditorGUI.indentLevel++;
@@ -1148,7 +1776,7 @@ namespace GeenzShade
                     }
                     DrawRangeProp(properties, "_AuxThicknessRangeMin", "_AuxThicknessRangeMax", "Storage Range (nm)");
                     EditorGUILayout.HelpBox(
-                        "Storage range (nm) the R/G channels normalize into — must match the bake. The per-region position " +
+                        "Storage range (nm) the R/G channels normalize into - must match the bake. The per-region position " +
                         "within [min, max] still comes from the Clearcoat/Iridescence texture's A channel.", MessageType.None);
                     EditorGUI.indentLevel--;
                 }
@@ -1187,7 +1815,7 @@ namespace GeenzShade
                 EditorGUI.indentLevel++;
 
                 EditorGUILayout.HelpBox(
-                    "Input textures are now Texture2DArrays — the texture slots in the sections above accept array assets.",
+                    "Input textures are now Texture2DArrays - the texture slots in the sections above accept array assets.",
                     MessageType.Info);
 
                 // Index Source: where the array layer index comes from.
@@ -1243,7 +1871,7 @@ namespace GeenzShade
 
             EditorGUILayout.HelpBox(
                 "Screen-space reflections (adapted from Mochie's shaders) only run on the Ultra tier (LOD 400). " +
-                "They require the camera to render a depth texture — in VRChat that means a realtime shadow-casting " +
+                "They require the camera to render a depth texture - in VRChat that means a realtime shadow-casting " +
                 "directional light, or a depth-enabled camera. Use the Render Queue field (Advanced Render Mode) to draw " +
                 "reflective materials after the geometry they should reflect. SSR is skipped in mirrors and for rough surfaces.",
                 MessageType.Info);
@@ -1271,6 +1899,86 @@ namespace GeenzShade
             EditorGUI.indentLevel--;
         }
 
+        private void DrawSoftDepthProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            var useProp = FindProperty("_UseSoftDepth", properties);
+            if (useProp == null) return;
+
+            softDepthFoldout = EditorGUILayout.Foldout(softDepthFoldout, "Soft Depth Fade (transparent)", true);
+            if (!softDepthFoldout) return;
+
+            EditorGUI.indentLevel++;
+
+            EditorGUILayout.HelpBox(
+                "Eases alpha out as a transparent surface approaches the opaque geometry behind it, softening hard " +
+                "intersection seams. Only acts in Transparent / Premultiplied render modes. Requires the camera to render a " +
+                "depth texture (in VRChat: a realtime shadow-casting directional light, or a depth-enabled camera); where none " +
+                "is available the surface renders fully.\n\n" +
+                "Heads-up: this really only behaves on static / non-skinned meshes. On rigged meshes the depth prepass and the " +
+                "forward pass disagree about where the skinned verts are, so the fade gets confused - a Unity quirk, not " +
+                "something the shader can fix. Keep it to non-rigged geometry.", MessageType.Info);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                new GUIContent("Enable Soft Depth", "Fade transparent surfaces near opaque geometry behind them."),
+                GUILayout.Width(EditorGUIUtility.labelWidth));
+            bool use = useProp.floatValue > 0.5f;
+            bool newUse = EditorGUILayout.Toggle(use);
+            if (newUse != use)
+                useProp.floatValue = newUse ? 1.0f : 0.0f;
+            EditorGUILayout.EndHorizontal();
+
+            if (newUse)
+            {
+                EditorGUI.indentLevel++;
+                DrawSlider(properties, "_SoftDepthFadeDistance", "Fade Distance", 0.001f, 5f);
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUI.indentLevel--;
+        }
+
+        private void DrawScreenSpaceShadowProperties(MaterialEditor materialEditor, MaterialProperty[] properties, Material material)
+        {
+            var useProp = FindProperty("_UseScreenSpaceShadows", properties);
+            if (useProp == null) return;
+
+            ssShadowFoldout = EditorGUILayout.Foldout(ssShadowFoldout, "Screen-Space Shadows (SH dominant light)", true);
+            if (!ssShadowFoldout) return;
+
+            EditorGUI.indentLevel++;
+
+            EditorGUILayout.HelpBox(
+                "Casts a screen-space shadow from the dominant light direction derived from the scene's spherical harmonics " +
+                "(the same SH dominant light the shader already evaluates). Marches the depth buffer toward that direction and " +
+                "darkens the SH light where occluded. Requires a camera depth texture (in VRChat: a realtime shadow-casting " +
+                "directional light, or a depth-enabled camera). Only affects the SH dominant light, on dynamic (non-lightmapped) " +
+                "objects.", MessageType.Info);
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(
+                new GUIContent("Enable SS Shadows", "Screen-space shadow from the SH dominant light direction."),
+                GUILayout.Width(EditorGUIUtility.labelWidth));
+            bool use = useProp.floatValue > 0.5f;
+            bool newUse = EditorGUILayout.Toggle(use);
+            if (newUse != use)
+                useProp.floatValue = newUse ? 1.0f : 0.0f;
+            EditorGUILayout.EndHorizontal();
+
+            if (newUse)
+            {
+                EditorGUI.indentLevel++;
+                DrawSlider(properties, "_SSShadowIntensity", "Intensity", 0f, 1f);
+                DrawSlider(properties, "_SSShadowDistance", "March Distance", 0.05f, 5f);
+                DrawSlider(properties, "_SSShadowSteps", "Steps", 4f, 64f);
+                DrawSlider(properties, "_SSShadowThickness", "Thickness", 0.01f, 2f);
+                DrawSlider(properties, "_SSShadowBias", "Bias", 0f, 0.5f);
+                EditorGUI.indentLevel--;
+            }
+
+            EditorGUI.indentLevel--;
+        }
+
         private static int LODToTierIndex(int lod)
         {
             if (lod >= 400) return 0;
@@ -1287,7 +1995,7 @@ namespace GeenzShade
             EditorGUI.indentLevel++;
 
             EditorGUILayout.HelpBox(
-                "Quality tiers use Unity shader LOD. This is GLOBAL per shader asset — changing it affects ALL materials " +
+                "Quality tiers use Unity shader LOD. This is GLOBAL per shader asset - changing it affects ALL materials " +
                 "using GzPBR, not just this one. Treat it as an authoring/preview control; for builds, drive " +
                 "Shader.globalMaximumLOD or shader.maximumLOD from script.\n\n" +
                 "Ultra (400): exact iridescence/sheen, clearcoat\n" +
@@ -1394,6 +2102,42 @@ namespace GeenzShade
         {
             if (material == null || properties == null) return;
 
+            // Resync on Undo/Redo, which restores the float but not keyword state.
+            var emissionWaveProp = FindProperty("_EmissionWave", properties);
+            if (emissionWaveProp != null)
+            {
+                int waveMode = Mathf.RoundToInt(emissionWaveProp.floatValue);
+                if (!CheckAudioLinkInstalled()) waveMode = 0;
+                material.DisableKeyword("_EMISSIONWAVE_OFF");
+                material.DisableKeyword("_EMISSIONWAVE_PULSE");
+                material.DisableKeyword("_EMISSIONWAVE_RIPPLE");
+                material.EnableKeyword(
+                    waveMode == 1 ? "_EMISSIONWAVE_PULSE" :
+                    waveMode == 2 ? "_EMISSIONWAVE_RIPPLE" : "_EMISSIONWAVE_OFF");
+            }
+
+            var ltcgiProp = FindProperty("_LTCGI", properties);
+
+            if (ltcgiProp != null) {
+                int ltcgiMode = Mathf.RoundToInt(ltcgiProp.floatValue);
+
+                if (!CheckLTCGIInstalled()) {
+                    ltcgiMode = 0;
+                }
+
+                material.DisableKeyword("_LTCGI_OFF");
+                material.DisableKeyword("_LTCGI_WORLD");
+                material.DisableKeyword("_LTCGI_AVATAR");
+                string ltcgiKeyword = "_LTCGI_OFF";
+                if (ltcgiMode == 1) {
+                    ltcgiKeyword = "_LTCGI_WORLD";
+                } else if (ltcgiMode == 2) {
+                    ltcgiKeyword = "_LTCGI_AVATAR";
+                }
+
+                material.EnableKeyword(ltcgiKeyword);
+            }
+
             // Update render mode keywords
             var renderModeProp = FindProperty("_RenderMode", properties);
             if (renderModeProp != null)
@@ -1452,13 +2196,20 @@ namespace GeenzShade
             UpdateFeatureKeyword(material, properties, "_UseDiffuseTransmission", "USE_DIFFUSE_TRANSMISSION");
             UpdateFeatureKeyword(material, properties, "_UseEnvironmentReflection", "USE_ENVIRONMENT_REFLECTION");
             UpdateFeatureKeyword(material, properties, "_UseSpecularAntialiasing", "USE_SPECULAR_ANTIALIASING");
+            UpdateFeatureKeyword(material, properties, "_UseDitheredShadows", "USE_DITHERED_SHADOWS");
+            UpdateFeatureKeyword(material, properties, "_UseSharedSampler", "USE_SHARED_SAMPLER");
             UpdateFeatureKeyword(material, properties, "_UseVRCLightVolumes", "USE_VRC_LIGHT_VOLUMES");
             UpdateFeatureKeyword(material, properties, "_UseSSR", "USE_SSR");
+            UpdateFeatureKeyword(material, properties, "_UseSoftDepth", "USE_SOFT_DEPTH");
+            UpdateFeatureKeyword(material, properties, "_UseScreenSpaceShadows", "USE_SS_SHADOWS");
             UpdateFeatureKeyword(material, properties, "_UseTextureArrays", "USE_TEXTURE_ARRAYS");
             UpdateFeatureKeyword(material, properties, "_ArrayIndexSource", "_ARRAYINDEXSOURCE_MATERIALINSTANCE");
             UpdateFeatureKeywordInverse(material, properties, "_ArrayIndexSource", "_ARRAYINDEXSOURCE_VERTEX");
             UpdateFeatureKeyword(material, properties, "_UseAuxData", "USE_AUX_DATA");
             UpdateFeatureKeyword(material, properties, "_UseAuxThickness", "USE_AUX_THICKNESS");
+            // Baker-driven (GeenzTools merged-mesh visibility); resynced here so an
+            // inspector pass cannot clobber the keyword off a baked material.
+            UpdateFeatureKeyword(material, properties, "_ObjectToggles", "USE_OBJECT_TOGGLES");
             UpdateFeatureKeyword(material, properties, "_FaceCullSource", "_FACECULLSOURCE_TEXTURE");
             UpdateFeatureKeywordInverse(material, properties, "_FaceCullSource", "_FACECULLSOURCE_HARDWARE");
             
@@ -1535,9 +2286,6 @@ namespace GeenzShade
             return null;
         }
 
-        // Returns the array-variant texture property (name + "Array") when texture
-        // arrays are enabled, otherwise the standard 2D property. Lets the normal
-        // texture slots bind to the Texture2DArray in place when arrays are on.
         private MaterialProperty FindTexProperty(string name2D, MaterialProperty[] properties)
         {
             var useArrays = FindProperty("_UseTextureArrays", properties);
