@@ -9,7 +9,7 @@ Most shaders generally aren't doing anything particularly novel, and the value y
 
 ## Installation via Unity Package Manager
 
-Note: You are going to need to make sure VRC light volumes are in your project.  Please follow these instructions for how to install light volumes to your project: https://github.com/REDSIM/VRCLightVolumes?tab=readme-ov-file#Installation-through-VRChat-Creator-Companion
+Note: You are going to need to make sure VRC light volumes are in your project if you intend to use them.  Same applies to LTCGI.  Please follow these instructions for how to install light volumes to your project: https://github.com/REDSIM/VRCLightVolumes?tab=readme-ov-file#Installation-through-VRChat-Creator-Companion
 
 ### Option 1: Install via Git URL
 1. Open Unity Package Manager (Window > Package Manager)
